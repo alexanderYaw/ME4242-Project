@@ -1,0 +1,33 @@
+{
+  "profile_velocity": 65,
+  "motors": [
+    {
+      "radius_mm": 20.0,
+      "zero_rad": 0.1856116753341626,
+      "invert": false,
+      "min_deg": 0.0,
+      "max_deg": 157.32
+    },
+    {
+      "radius_mm": 20.0,
+      "zero_rad": 0.14572817484913592,
+      "invert": false,
+      "min_deg": 0.0,
+      "max_deg": 146.6
+    },
+    {
+      "radius_mm": 20.0,
+      "zero_rad": 0.28225246497095796,
+      "invert": false,
+      "min_deg": 0.0,
+      "max_deg": 118.57
+    },
+    {
+      "radius_mm": 20.0,
+      "zero_rad": 0.10124273200045232,
+      "invert": false,
+      "min_deg": 0.0,
+      "max_deg": 119.2
+    }
+  ]
+}

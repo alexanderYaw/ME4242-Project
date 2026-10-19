@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 import motors
+import tipctl
 
 MOCK = os.environ.get("EMIO_MOCK", "0") == "1"
 DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
@@ -146,7 +147,14 @@ class Controller:
 
 
 ctl = Controller()
+tip = tipctl.TipController(ctl, DATA_DIR / "tip_model.json")
 STATIC = Path(__file__).parent / "static"
+
+
+def full_snapshot():
+    s = ctl.snapshot()
+    s["tip"] = tip.snapshot()
+    return s
 
 
 @asynccontextmanager
@@ -169,7 +177,7 @@ def index():
 
 @app.get("/api/state")
 def get_state():
-    return ctl.snapshot()
+    return full_snapshot()
 
 
 @app.get("/api/ports")
@@ -206,12 +214,33 @@ def torque(mid: int, req: TorqueReq):
     bus = ctl.require_bus()
     if mid not in motors.IDS:
         raise HTTPException(404, "Unknown motor")
+    m = ctl.state.get(mid)
+    if req.on and m and m["hw_error"]:
+        raise HTTPException(409, f"Motor {mid} has hardware error {m['hw_error']}; reboot it first")
     try:
+        if req.on:
+            # A motor that rebooted or lost power comes back with no speed limit: re-apply it.
+            bus.set_profile_velocity(ctl.settings["profile_velocity"])
         bus.set_torque(mid, req.on)
     except RuntimeError as e:
         raise HTTPException(500, str(e))
     if ctl.state.get(mid):  # don't wait for the next poll before accepting goals
         ctl.state[mid] = {**ctl.state[mid], "torque": req.on}
+    ctl.commanded.pop(mid, None)
+    return {"ok": True}
+
+
+@app.post("/api/motor/{mid}/reboot")
+def reboot(mid: int):
+    """Clear a hardware error (e.g. overload). The motor restarts with torque off."""
+    bus = ctl.require_bus()
+    if mid not in motors.IDS:
+        raise HTTPException(404, "Unknown motor")
+    try:
+        bus.reboot(mid)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+    bus.set_profile_velocity(ctl.settings["profile_velocity"])
     ctl.commanded.pop(mid, None)
     return {"ok": True}
 
@@ -224,6 +253,8 @@ class GoalReq(BaseModel):
 @app.post("/api/motor/{mid}/goal")
 def goal(mid: int, req: GoalReq):
     bus = ctl.require_bus()
+    if tip.busy:
+        raise HTTPException(409, "Tip control is moving the arm; press Stop first")
     m = ctl.state.get(mid)
     if mid not in motors.IDS or m is None:
         raise HTTPException(404, "Motor not available")
@@ -244,6 +275,7 @@ def goal(mid: int, req: GoalReq):
 def hold():
     """Set every powered motor's goal to where it is now."""
     bus = ctl.require_bus()
+    tip.stop()
     errors = []
     for i, m in ctl.state.items():
         if m and m["torque"]:
@@ -257,6 +289,7 @@ def hold():
 
 @app.post("/api/torque_off_all")
 def torque_off_all():
+    tip.stop()
     bus = ctl.require_bus()
     errors = []
     for i in motors.IDS:
@@ -328,12 +361,57 @@ def speed(req: SpeedReq):
     return {"profile_velocity": req.profile_velocity}
 
 
+class TipFeedReq(BaseModel):
+    x: float | None = None
+    y: float | None = None
+    z: float | None = None
+    markers: int = 0
+
+
+@app.post("/api/tip")
+def tip_feed(req: TipFeedReq):
+    """Tip position from the camera (tip_feed.py)."""
+    if req.markers and None in (req.x, req.y, req.z):
+        raise HTTPException(422, "x, y, z required when a marker is seen")
+    tip.add_feed(req.model_dump())
+    return {"ok": True}
+
+
+@app.get("/api/tip/model")
+def tip_model():
+    info = tip.model_info()
+    if info is None:
+        raise HTTPException(404, "No tip model; run fit_tip_model.py")
+    return info
+
+
+class TipGotoReq(BaseModel):
+    x: float
+    z: float
+    closed_loop: bool = True
+
+
+@app.post("/api/tip/goto")
+def tip_goto(req: TipGotoReq):
+    try:
+        tip.goto(req.x, req.z, req.closed_loop)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return tip.status
+
+
+@app.post("/api/tip/stop")
+def tip_stop():
+    tip.stop()
+    return {"ok": True}
+
+
 @app.websocket("/ws")
 async def ws(sock: WebSocket):
     await sock.accept()
     try:
         while True:
-            await sock.send_text(json.dumps(ctl.snapshot()))
+            await sock.send_text(json.dumps(full_snapshot()))
             await asyncio.sleep(1 / POLL_HZ)
     except (WebSocketDisconnect, RuntimeError):
         pass

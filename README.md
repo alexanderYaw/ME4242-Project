@@ -29,8 +29,8 @@ overrides the motors, and only one program can use the motor port at a time.
 
 ### 4. Start the GUI
 
-- **Linux / macOS:** `./run.sh`
-- **Windows:** double-click `run.bat` (or run it from a terminal in the repo folder)
+- **Linux / macOS:** `cd motor_gui && ./run.sh`
+- **Windows:** double-click `motor_gui\run.bat` (or run it from a terminal in the `motor_gui` folder)
 
 The first run creates `.venv` and installs the dependencies (needs internet, takes about a minute); later
 runs start in a couple of seconds. Keep the terminal open while using the GUI; Ctrl+C stops it.
@@ -67,6 +67,7 @@ Environment variables, e.g. `EMIO_MOCK=1 ./run.sh` (Windows: `set EMIO_MOCK=1` t
 ### Manual start (instead of the scripts)
 
 ```bash
+cd motor_gui
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt      # Windows: .venv\Scripts\pip install -r requirements.txt
 cd app && ../.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8000
@@ -80,6 +81,35 @@ EMIO_MOCK=1 docker compose up -d      # simulated motors
 docker compose down                   # stop
 ```
 </details>
+
+## Tip control (cable-driven arm)
+
+The **Tip control** panel (below the motor cards) moves the arm tip to a target position (x, z) in the
+calibrated camera frame, shows the tip live from above and the arm's bend from the side.
+
+**Setup, once per robot** (scripts in the repo root use the EMIO Python, `~/emio-venv/bin/python`):
+
+1. In the GUI, set each motor's taut zero (**Calibrate: set 0 here** where the cable just goes taut) and its
+   max pull (Settings → Soft max, absolute degrees).
+2. Calibrate the camera with the ArUco plate: `~/emio-venv/bin/python -m emioapi calibrate`, then check it
+   with `~/emio-venv/bin/python check_camera_calibration.py` (2–4 mm error expected).
+3. Put one green marker on the tip, set `MAX_SAFE_DEG` in `collect_tip_data.py` to each motor's max pull, and
+   collect data (GUI running, camera free): `~/emio-venv/bin/python collect_tip_data.py` → `data/tip_<time>.csv`.
+4. Fit the model: `~/emio-venv/bin/python fit_tip_model.py data/tip_<time>.csv` → writes
+   `motor_gui/data/tip_model.json` (the GUI picks up a new fit automatically).
+
+**Use:**
+
+1. Start the GUI, and in a second terminal the camera feed: `~/emio-venv/bin/python tip_feed.py`
+   (`--show` for the camera windows). The panel shows "camera: tip seen" when it's live.
+2. Click the top view (or type X/Z and press **Move tip**). With **Correct with camera** on, it moves using
+   the model, then corrects from the camera until the tip is within 3 mm (friction makes the model alone
+   about ±9 mm). Targets outside the reachable area go to the nearest reachable point.
+
+Moves follow the pair rules (motors 0/2 and 1/3 oppose; only one of each pair pulls; a cable is released
+before its opposite pulls), back off above 1000 mA and release everything above 1100 mA. **Stop**, `Esc` or
+**TORQUE OFF ALL** interrupt a move; manual motor commands are refused while it moves.
+API: `POST /api/tip/goto {"x":40,"z":-30,"closed_loop":true}`, `POST /api/tip/stop`; the feed posts to `POST /api/tip`.
 
 ## Notes
 

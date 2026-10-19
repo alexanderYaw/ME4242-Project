@@ -65,6 +65,22 @@
   .settings { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; }
   .hint { color: var(--muted); font-size: 12px; padding: 0 16px 16px; }
   kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .tip-panel { margin: 0 16px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .tip-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+  .tip-head h2 { font-size: 15px; margin: 0 6px 0 0; }
+  .chip.live { color: var(--ok); }
+  .tip-grid { display: grid; gap: 14px; grid-template-columns: minmax(280px, 1.35fr) minmax(240px, 1fr) minmax(230px, .8fr); }
+  @media (max-width: 1000px) { .tip-grid { grid-template-columns: 1fr; } }
+  .view { display: flex; flex-direction: column; gap: 4px; }
+  .view-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .view canvas { width: 100%; height: 340px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  #tipTop { cursor: crosshair; }
+  .tip-side { display: flex; flex-direction: column; gap: 10px; }
+  .tip-side .readouts { grid-template-columns: repeat(2, 1fr); margin: 0; }
+  .tip-status { font-size: 13px; min-height: 2.8em; }
+  .tip-status b { text-transform: capitalize; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 </style>
 </head>
 <body>
@@ -85,6 +101,49 @@
 </header>
 <div class="error" id="error"></div>
 <main id="cards"></main>
+<section class="tip-panel" id="tipPanel">
+  <div class="tip-head">
+    <h2>Tip control</h2>
+    <span class="chip" id="tipModelChip">no model</span>
+    <span class="chip" id="tipFeedChip">camera feed off</span>
+  </div>
+  <div class="tip-grid">
+    <div class="view">
+      <span class="view-title">Top view (x, z) — click to set a target</span>
+      <canvas id="tipTop"></canvas>
+      <div class="legend"><span><i style="background:var(--ok)"></i>tip (camera)</span>
+        <span><i style="border:2px solid var(--muted);width:6px;height:6px"></i>tip (model, from motor angles)</span>
+        <span><i style="background:var(--danger)"></i>target</span><span>shaded: reachable area</span></div>
+    </div>
+    <div class="view">
+      <span class="view-title">Side view (bending plane)</span>
+      <canvas id="tipSide"></canvas>
+      <div class="legend" id="tipBend">—</div>
+    </div>
+    <div class="tip-side">
+      <div class="row" style="margin:0">
+        <label>X <input type="number" id="tipX" step="1"></label>
+        <label>Z <input type="number" id="tipZ" step="1"></label> mm
+      </div>
+      <label><input type="checkbox" id="tipClosed" checked> Correct with camera (closed loop)</label>
+      <label><input type="checkbox" id="tipClick" checked> Move when I click the top view</label>
+      <div class="row" style="margin:0">
+        <button class="primary" id="tipGo">Move tip</button>
+        <button id="tipStop">Stop</button>
+      </div>
+      <div class="tip-status" id="tipStatus">Idle</div>
+      <div class="readouts">
+        <div><span>Tip (camera)</span><span id="tipMeas">—</span></div>
+        <div><span>Tip (model)</span><span id="tipPred">—</span></div>
+        <div><span>Height y</span><span id="tipY">—</span></div>
+        <div><span>Bend dA / dB</span><span id="tipPose">—</span></div>
+      </div>
+      <p class="hint" style="padding:0;margin:0">Needs a fitted model (<code>fit_tip_model.py</code>) and, for closed loop,
+        the camera feed (<code>~/emio-venv/bin/python tip_feed.py</code>). Moves follow the pair rules
+        (one cable of each opposing pair pulls at a time). Stop / Esc / TORQUE OFF ALL interrupt a move.</p>
+    </div>
+  </div>
+</section>
 <p class="hint">Torque must be on before a motor will move. Turning torque on holds the current position.
   Commands are clamped to the soft limits and the motor's firmware limits. Angles use the emioapi convention
   (pulse 2048 = 0°) until you calibrate; after that, angle, goal, slider and jog are relative to the
@@ -119,6 +178,7 @@
       <input type="number" class="target" step="0.1" style="width:62px" title="Target angle (deg)"><button class="go">Go</button>
     </div>
     <div class="row">
+      <button class="reboot danger" hidden title="Clears the hardware error. Release any cable tension first: the motor comes back with torque off.">Reboot motor</button>
       <button class="zero" title="Calibrate: the current position becomes 0 (angle and cable displacement)">Calibrate: set 0 here</button>
       <span class="chip temp"></span>
     </div>
@@ -144,6 +204,9 @@ function flashClamp(i) {
   const n = $(".clampnote", cards[i].el); n.hidden = false;
   clearTimeout(cards[i].clampTimer); cards[i].clampTimer = setTimeout(() => n.hidden = true, 2500);
 }
+// Hardware Error Status bits, see https://emanual.robotis.com/docs/en/dxl/x/xm430-w210/#hardware-error-status
+const HW_ERRORS = { 1: "input voltage", 4: "overheating", 8: "encoder", 16: "electrical shock", 32: "overload" };
+const hwText = e => Object.entries(HW_ERRORS).filter(([b]) => e & b).map(([, t]) => t).join(", ") || `code ${e}`;
 const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : v.toFixed(d);
 let state = null;
 const cards = [];
@@ -178,6 +241,10 @@ for (let i = 0; i < 4; i++) {
     goalFor(i, base + rad(+b.dataset.jog));
   }));
   $(".go", el).addEventListener("click", () => goalFor(i, rad(+$(".target", el).value)));
+  $(".reboot", el).addEventListener("click", () => {
+    if (confirm(`Reboot motor ${i}? Release cable tension first. It restarts with torque off.`))
+      api(`/api/motor/${i}/reboot`, {}).then(() => showError("")).catch(() => {});
+  });
   $(".zero", el).addEventListener("click", () => api(`/api/motor/${i}/zero`, {}).catch(() => {}));
   $(".save", el).addEventListener("click", () => api(`/api/motor/${i}/settings`, {
     radius_mm: +$(".radius", el).value, invert: $(".invert", el).checked,
@@ -189,6 +256,7 @@ for (let i = 0; i < 4; i++) {
 
 function render(s) {
   state = s;
+  renderTip(s);
   $("#dot").classList.toggle("on", s.connected);
   $("#status").textContent = s.connected ? `Connected · ${s.port}${s.mock ? " (simulated)" : ""}` : "Disconnected";
   if (s.error && !s.connected) showError(s.error);
@@ -201,7 +269,8 @@ function render(s) {
     $(".model", el).textContent = m.online ? (m.model || "") : (s.connected ? "no response" : "offline");
     $(".moving", el).hidden = !m.moving;
     $(".override", el).hidden = !m.overridden;
-    const err = $(".err", el); err.hidden = !m.hw_error; err.textContent = m.hw_error ? `HW error ${m.hw_error}` : "";
+    const err = $(".err", el); err.hidden = !m.hw_error; err.textContent = m.hw_error ? `HW error ${m.hw_error}: ${hwText(m.hw_error)}` : "";
+    $(".reboot", el).hidden = !m.hw_error;
     $(".pulse", el).textContent = m.online ? m.pulse : "—";
     const zero = m.settings.zero_rad ?? 0;
     $(".uncal", el).hidden = m.calibrated || !m.online;
@@ -214,7 +283,7 @@ function render(s) {
     $(".vel", el).textContent = m.online ? `${fmt(m.velocity_rpm, 1)} rpm` : "—";
     $(".cur", el).textContent = !m.online ? "—" : m.ma_per_unit ? `${fmt(m.current_raw * m.ma_per_unit, 0)} mA` : `${m.current_raw} u`;
     $(".temp", el).textContent = m.online && m.temp_c !== null ? `${m.temp_c} °C` : "";
-    const tq = $(".torque", el); tq.checked = !!m.torque; tq.disabled = !m.online;
+    const tq = $(".torque", el); tq.checked = !!m.torque; tq.disabled = !m.online || (!!m.hw_error && !m.torque);
     const [lo, hi] = m.limits_rad.map(r => deg(r - zero));
     const slider = $(".slider", el);
     slider.min = lo; slider.max = hi;
@@ -258,6 +327,124 @@ $("#speed").addEventListener("input", e => $("#speedval").textContent = `${(e.ta
 $("#port").addEventListener("focus", loadPorts);
 document.addEventListener("pointerup", () => cards.forEach(c => c.dragging = false));
 document.addEventListener("keydown", e => { if (e.key === "Escape") api("/api/torque_off_all", {}).catch(() => {}); });
+
+// ---------------- Tip control ----------------
+let tipModel = null, tipTarget = null, tipView = null;
+const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+async function loadTipModel() {
+  try { const r = await fetch("/api/tip/model"); tipModel = r.ok ? await r.json() : null; } catch { tipModel = null; }
+}
+
+function setupCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  return { g, w, h };
+}
+
+// world box -> canvas transform with equal aspect; y up
+function fitView(w, h, x0, x1, y0, y1, pad = 28) {
+  const k = Math.min((w - 2 * pad) / (x1 - x0), (h - 2 * pad) / (y1 - y0));
+  const ox = (w - k * (x1 - x0)) / 2 - k * x0, oy = (h + k * (y1 - y0)) / 2 + k * y0;
+  return { k, px: x => ox + k * x, py: y => oy - k * y, wx: px => (px - ox) / k, wy: py => (oy - py) / k };
+}
+
+function dot(g, x, y, r, fill, stroke) {
+  g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = 2; g.stroke(); }
+}
+
+function drawTop(t) {
+  const cv = $("#tipTop"), { g, w, h } = setupCanvas(cv), muted = cssVar("--muted"), line = cssVar("--line");
+  if (!tipModel) { g.fillStyle = muted; g.font = "13px system-ui"; g.fillText("No tip model: run fit_tip_model.py", 16, 24); tipView = null; return; }
+  const pts = tipModel.outline.concat(tipModel.samples);
+  const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
+  const v = tipView = fitView(w, h, Math.min(...xs) - 15, Math.max(...xs) + 15, Math.min(...zs) - 15, Math.max(...zs) + 15);
+  g.strokeStyle = line; g.lineWidth = 1; g.font = "11px system-ui"; g.fillStyle = muted;
+  for (let a = -300; a <= 300; a += 50) {           // 50 mm grid
+    g.beginPath(); g.moveTo(v.px(a), 0); g.lineTo(v.px(a), h); g.moveTo(0, v.py(a)); g.lineTo(w, v.py(a)); g.stroke();
+  }
+  g.fillText("+x →", w - 40, h - 8); g.fillText("+z ↑", 6, 14); g.fillText("50 mm grid", 6, h - 8);
+  g.beginPath(); tipModel.outline.forEach(([x, z], i) => i ? g.lineTo(v.px(x), v.py(z)) : g.moveTo(v.px(x), v.py(z)));
+  g.closePath(); g.fillStyle = cssVar("--accent") + "22"; g.fill(); g.strokeStyle = cssVar("--accent") + "88"; g.stroke();
+  g.fillStyle = muted + "99"; tipModel.samples.forEach(([x, z]) => g.fillRect(v.px(x) - 1, v.py(z) - 1, 2, 2));
+  const [bx, , bz] = tipModel.base;                   // arm attachment, seen from above
+  g.strokeStyle = muted; g.beginPath(); g.moveTo(v.px(bx) - 6, v.py(bz)); g.lineTo(v.px(bx) + 6, v.py(bz));
+  g.moveTo(v.px(bx), v.py(bz) - 6); g.lineTo(v.px(bx), v.py(bz) + 6); g.stroke();
+  const target = t.status.target || tipTarget;
+  const meas = t.feed && t.feed.markers ? [t.feed.x, t.feed.z] : null;
+  if (target && meas) { g.setLineDash([4, 4]); g.strokeStyle = muted; g.beginPath(); g.moveTo(v.px(meas[0]), v.py(meas[1])); g.lineTo(v.px(target[0]), v.py(target[1])); g.stroke(); g.setLineDash([]); }
+  if (t.predicted) dot(g, v.px(t.predicted[0]), v.py(t.predicted[2]), 6, null, muted);
+  if (meas) dot(g, v.px(meas[0]), v.py(meas[1]), 6, cssVar("--ok"));
+  if (target) {
+    const [x, y] = [v.px(target[0]), v.py(target[1])], d = cssVar("--danger");
+    g.strokeStyle = d; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 9, y); g.lineTo(x + 9, y); g.moveTo(x, y - 9); g.lineTo(x, y + 9); g.stroke();
+    dot(g, x, y, 3, d);
+  }
+}
+
+function drawSide(t) {
+  const cv = $("#tipSide"), { g, w, h } = setupCanvas(cv), muted = cssVar("--muted");
+  if (!tipModel) { $("#tipBend").textContent = "—"; return; }
+  const [bx, by, bz] = tipModel.base, L = tipModel.length_mm, platformY = -233;
+  const v = fitView(w, h, -0.25 * L, 1.1 * L, platformY - 10, by + 20);
+  g.strokeStyle = cssVar("--line"); g.lineWidth = 1; g.beginPath(); g.moveTo(v.px(-1e3), v.py(by)); g.lineTo(v.px(0), v.py(by)); g.stroke();
+  g.strokeStyle = muted; g.beginPath(); g.moveTo(0, v.py(platformY)); g.lineTo(w, v.py(platformY)); g.stroke();
+  g.fillStyle = muted; g.font = "11px system-ui"; g.fillText("platform", 6, v.py(platformY) - 4); g.fillText("attachment", v.px(0) + 6, v.py(by) - 4);
+  const src = t.feed && t.feed.markers ? [t.feed.x, t.feed.y, t.feed.z] : t.predicted;
+  if (!src) { $("#tipBend").textContent = "—"; return; }
+  const hh = Math.hypot(src[0] - bx, src[2] - bz), vv = by - src[1];
+  const theta = 2 * Math.atan2(hh, vv), phi = Math.atan2(src[2] - bz, src[0] - bx) * 180 / Math.PI;
+  g.strokeStyle = cssVar("--accent"); g.lineWidth = 4; g.lineCap = "round"; g.beginPath(); g.moveTo(v.px(0), v.py(by));
+  if (hh < 0.5) g.lineTo(v.px(0), v.py(by - vv));
+  else {
+    const R = (hh * hh + vv * vv) / (2 * hh);
+    for (let k = 1; k <= 40; k++) { const a = theta * k / 40; g.lineTo(v.px(R * (1 - Math.cos(a))), v.py(by - R * Math.sin(a))); }
+  }
+  g.stroke(); g.lineCap = "butt";
+  dot(g, v.px(0), v.py(by), 4, muted);
+  dot(g, v.px(hh), v.py(src[1]), 6, t.feed && t.feed.markers ? cssVar("--ok") : null, t.feed && t.feed.markers ? null : muted);
+  $("#tipBend").textContent = `bend ${(theta * 180 / Math.PI).toFixed(0)}° from vertical, toward ${phi.toFixed(0)}° (from +x toward +z), `
+    + `tip ${hh.toFixed(0)} mm out, ${(src[1] - (by - L)).toFixed(0)} mm above the straight-down position` + (t.feed && t.feed.markers ? "" : " (model)");
+}
+
+function renderTip(s) {
+  const t = s.tip; if (!t) return;
+  if (t.model && !tipModel) loadTipModel();
+  if (!t.model) tipModel = null;
+  $("#tipModelChip").textContent = tipModel ? `model: ${tipModel.n} samples, ±${tipModel.cv_error_mm.median.toFixed(0)} mm` : "no model";
+  const fc = $("#tipFeedChip"), live = t.feed && t.feed.age_s < 0.5;
+  fc.textContent = !t.feed ? "camera feed off" : !live ? "camera feed stale" : t.feed.markers ? `camera: tip seen` : "camera: tip not seen";
+  fc.classList.toggle("live", !!(live && t.feed.markers));
+  const f3 = p => p ? `${p[0].toFixed(1)}, ${p[2].toFixed(1)}` : "—";
+  $("#tipMeas").textContent = t.feed && t.feed.markers ? f3([t.feed.x, t.feed.y, t.feed.z]) : "—";
+  $("#tipPred").textContent = f3(t.predicted);
+  $("#tipY").textContent = t.feed && t.feed.markers ? t.feed.y.toFixed(1) : t.predicted ? t.predicted[1].toFixed(1) + " (model)" : "—";
+  $("#tipPose").textContent = t.pose ? `${t.pose.A.toFixed(2)} / ${t.pose.B.toFixed(2)}` : "—";
+  const st = t.status, err = st.error_mm != null ? ` · error ${st.error_mm.toFixed(1)} mm` : "";
+  $("#tipStatus").innerHTML = `<b>${st.state}</b>${err}<br>${st.message || ""}`;
+  $("#tipGo").disabled = t.busy || !tipModel || !s.connected; $("#tipStop").disabled = !t.busy;
+  drawTop(t); drawSide(t);
+}
+
+function tipGoto() {
+  const x = +$("#tipX").value, z = +$("#tipZ").value;
+  if ($("#tipX").value === "" || $("#tipZ").value === "") return showError("Enter a target X and Z");
+  tipTarget = [x, z];
+  api("/api/tip/goto", { x, z, closed_loop: $("#tipClosed").checked }).then(() => showError("")).catch(() => {});
+}
+$("#tipGo").addEventListener("click", tipGoto);
+$("#tipStop").addEventListener("click", () => api("/api/tip/stop", {}).catch(() => {}));
+$("#tipTop").addEventListener("click", e => {
+  if (!tipView) return;
+  const r = e.target.getBoundingClientRect();
+  const x = tipView.wx(e.clientX - r.left), z = tipView.wy(e.clientY - r.top);
+  $("#tipX").value = x.toFixed(0); $("#tipZ").value = z.toFixed(0); tipTarget = [x, z];
+  if ($("#tipClick").checked && !(state && state.tip && state.tip.busy)) tipGoto();
+});
+setInterval(() => { if (state && state.tip && state.tip.model) loadTipModel(); }, 15000);  // pick up refits
 
 loadPorts();
 connectWs();
