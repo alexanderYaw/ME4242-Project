@@ -1,0 +1,15 @@
+services:
+  motor-gui:
+    build: .
+    image: emio-motor-gui
+    ports:
+      - "127.0.0.1:8000:8000"   # localhost only
+    volumes:
+      - /dev:/dev               # host /dev so the EMIO can be unplugged/replugged without a restart
+      - ./data:/data            # settings.json (zeros, drum radius, soft limits)
+    device_cgroup_rules:
+      - "c 188:* rmw"           # USB serial (ttyUSB*, the EMIO's FTDI adapter)
+      - "c 166:* rmw"           # ACM serial (ttyACM*)
+    environment:
+      - EMIO_MOCK=${EMIO_MOCK:-0}     # 1 = simulated motors, no hardware needed
+      - EMIO_PORT=${EMIO_PORT:-}      # e.g. /dev/ttyUSB0; empty = first FTDI port

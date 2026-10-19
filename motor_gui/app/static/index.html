@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMIO Motor Control</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1b1f24; --muted: #6b7380; --line: #dde1e6;
+    --accent: #2563eb; --ok: #15803d; --warn: #b45309; --danger: #dc2626; --chip: #eef1f5;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --card: #171b21; --text: #e6e9ee; --muted: #8c95a3; --line: #2a3039;
+      --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --danger: #f87171; --chip: #222831;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 1px solid var(--line);
+           padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  h1 { font-size: 16px; margin: 0 8px 0 0; white-space: nowrap; }
+  .status { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); }
+  .grow { flex: 1; }
+  select, input[type=number] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+           border-radius: 6px; padding: 5px 7px; }
+  input[type=number] { width: 80px; font-family: var(--mono); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--text);
+           border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+  .speed { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger);
+           padding: 8px 16px; display: none; }
+  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card.offline { opacity: .5; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
+  .card-head h2, .chip { white-space: nowrap; }
+  .card-head h2 { font-size: 15px; margin: 0; }
+  .chip { font-size: 11px; padding: 2px 7px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+  .chip.moving { color: var(--accent); }
+  .chip.uncal { color: var(--warn); }
+  .chip.err { color: #fff; background: var(--danger); }
+  .switch { margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .switch input { width: 36px; height: 20px; accent-color: var(--ok); cursor: pointer; }
+  .big { font-family: var(--mono); font-size: 30px; font-weight: 600; letter-spacing: -.5px; }
+  .big small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .readouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin: 8px 0 12px; }
+  .readouts div { display: flex; flex-direction: column; }
+  .readouts span:first-child { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .readouts span:last-child { font-family: var(--mono); font-size: 14px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .clampnote { color: var(--warn); font-family: inherit; }
+  .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .row button { padding: 6px 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); }
+  .settings { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; }
+  .hint { color: var(--muted); font-size: 12px; padding: 0 16px 16px; }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>EMIO Motor Control</h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">Disconnected</span></div>
+  <select id="port" title="Serial port"><option value="">auto (first FTDI)</option></select>
+  <button id="connect" class="primary">Connect</button>
+  <button id="disconnect">Disconnect</button>
+  <div class="speed">Speed
+    <input type="range" id="speed" min="5" max="200" step="5" style="width:90px">
+    <span id="speedval" style="font-family:var(--mono);min-width:64px"></span>
+  </div>
+  <div class="grow"></div>
+  <button id="calall" title="Set every motor's current position as 0">Calibrate all</button>
+  <button id="hold" title="Set every powered motor's goal to its current position">Hold all</button>
+  <button id="off" class="danger" title="Esc">TORQUE OFF ALL</button>
+</header>
+<div class="error" id="error"></div>
+<main id="cards"></main>
+<p class="hint">Torque must be on before a motor will move. Turning torque on holds the current position.
+  Commands are clamped to the soft limits and the motor's firmware limits. Angles use the emioapi convention
+  (pulse 2048 = 0°) until you calibrate; after that, angle, goal, slider and jog are relative to the
+  calibrated 0 (stored in data/settings.json; the motor itself is not changed). "Absolute" is the emioapi angle.
+  Cable displacement = (angle − zero) × drum radius. <kbd>Esc</kbd> = torque off all.</p>
+
+<template id="card-tpl">
+  <section class="card">
+    <div class="card-head">
+      <h2></h2><span class="chip model"></span><span class="chip moving" hidden>moving</span>
+      <span class="chip uncal" hidden title="Angles are relative to emioapi's zero (pulse 2048) until calibrated">uncalibrated</span>
+      <span class="chip err" hidden></span>
+      <span class="chip err override" hidden title="This motor's goal was changed by another program on the motor bus, e.g. an Emio Labs / SOFA scene with Robot connection on. Close it.">overridden by another program</span>
+      <label class="switch"><input type="checkbox" class="torque"><span>Torque</span></label>
+    </div>
+    <div class="big"><span class="pulse">—</span><small>pulses</small></div>
+    <div class="readouts">
+      <div><span>Angle</span><span class="deg">—</span></div>
+      <div><span>Radians</span><span class="rad">—</span></div>
+      <div><span>Cable</span><span class="cable">—</span></div>
+      <div><span>Goal</span><span class="goal">—</span></div>
+      <div><span>Velocity</span><span class="vel">—</span></div>
+      <div><span>Current</span><span class="cur">—</span></div>
+      <div><span>Absolute</span><span class="abs">—</span></div>
+      <div><span>Zero at</span><span class="zeroat">—</span></div>
+    </div>
+    <input type="range" class="slider" step="0.1">
+    <div class="range-labels"><span class="lo"></span><span class="clampnote" hidden>at limit: command clamped</span><span class="hi"></span></div>
+    <div class="row">
+      <button data-jog="-5">−5°</button><button data-jog="-1">−1°</button>
+      <button data-jog="1">+1°</button><button data-jog="5">+5°</button>
+      <input type="number" class="target" step="0.1" style="width:62px" title="Target angle (deg)"><button class="go">Go</button>
+    </div>
+    <div class="row">
+      <button class="zero" title="Calibrate: the current position becomes 0 (angle and cable displacement)">Calibrate: set 0 here</button>
+      <span class="chip temp"></span>
+    </div>
+    <details>
+      <summary>Settings</summary>
+      <div class="settings">
+        <label>Drum radius (mm)</label><input type="number" class="radius" step="0.1" min="0.1">
+        <label>Invert cable sign</label><input type="checkbox" class="invert">
+        <label>Soft min (° absolute)</label><input type="number" class="smin" step="1">
+        <label>Soft max (° absolute)</label><input type="number" class="smax" step="1">
+        <span></span><div class="row" style="margin:0"><button class="save">Save</button><button class="clearzero">Clear calibration</button></div>
+      </div>
+    </details>
+  </section>
+</template>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const deg = r => r * 180 / Math.PI, rad = d => d * Math.PI / 180;
+const goalFor = (i, a) => api(`/api/motor/${i}/goal`, { angle_rad: a, relative: true })
+  .then(r => { if (r.clamped) flashClamp(i); }).catch(() => {});
+function flashClamp(i) {
+  const n = $(".clampnote", cards[i].el); n.hidden = false;
+  clearTimeout(cards[i].clampTimer); cards[i].clampTimer = setTimeout(() => n.hidden = true, 2500);
+}
+const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : v.toFixed(d);
+let state = null;
+const cards = [];
+
+async function api(path, body) {
+  const res = await fetch(path, { method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { showError(data.detail ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : res.statusText); throw data; }
+  return data;
+}
+function showError(msg) { const e = $("#error"); e.textContent = msg; e.style.display = msg ? "block" : "none"; }
+
+function throttle(fn, ms) {
+  let last = 0, timer = null, args;
+  return (...a) => { args = a; const now = Date.now();
+    if (now - last >= ms) { last = now; fn(...args); }
+    else { clearTimeout(timer); timer = setTimeout(() => { last = Date.now(); fn(...args); }, ms - (now - last)); } };
+}
+
+for (let i = 0; i < 4; i++) {
+  const el = $("#card-tpl").content.firstElementChild.cloneNode(true);
+  $("h2", el).textContent = `Motor ${i}`;
+  const c = { el, dragging: false, settingsLoaded: false };
+  const sendGoal = throttle(d => goalFor(i, rad(d)), 60);
+  const slider = $(".slider", el);
+  slider.addEventListener("pointerdown", () => c.dragging = true);
+  slider.addEventListener("input", () => sendGoal(+slider.value));
+  $(".torque", el).addEventListener("change", e => api(`/api/motor/${i}/torque`, { on: e.target.checked }).then(() => showError("")).catch(() => {}));
+  el.querySelectorAll("[data-jog]").forEach(b => b.addEventListener("click", () => {
+    const m = state.motors[i], base = m.goal_rel_rad ?? m.angle_rel_rad;
+    goalFor(i, base + rad(+b.dataset.jog));
+  }));
+  $(".go", el).addEventListener("click", () => goalFor(i, rad(+$(".target", el).value)));
+  $(".zero", el).addEventListener("click", () => api(`/api/motor/${i}/zero`, {}).catch(() => {}));
+  $(".save", el).addEventListener("click", () => api(`/api/motor/${i}/settings`, {
+    radius_mm: +$(".radius", el).value, invert: $(".invert", el).checked,
+    min_deg: +$(".smin", el).value, max_deg: +$(".smax", el).value }).then(() => showError("")).catch(() => {}));
+  $(".clearzero", el).addEventListener("click", () => api(`/api/motor/${i}/settings`, { clear_zero: true }).catch(() => {}));
+  $("#cards").appendChild(el);
+  cards.push(c);
+}
+
+function render(s) {
+  state = s;
+  $("#dot").classList.toggle("on", s.connected);
+  $("#status").textContent = s.connected ? `Connected · ${s.port}${s.mock ? " (simulated)" : ""}` : "Disconnected";
+  if (s.error && !s.connected) showError(s.error);
+  const sp = $("#speed");
+  if (document.activeElement !== sp) sp.value = s.profile_velocity;
+  $("#speedval").textContent = `${(sp.value * 0.229).toFixed(1)} rpm`;
+  s.motors.forEach((m, i) => {
+    const { el } = cards[i], c = cards[i];
+    el.classList.toggle("offline", !m.online);
+    $(".model", el).textContent = m.online ? (m.model || "") : (s.connected ? "no response" : "offline");
+    $(".moving", el).hidden = !m.moving;
+    $(".override", el).hidden = !m.overridden;
+    const err = $(".err", el); err.hidden = !m.hw_error; err.textContent = m.hw_error ? `HW error ${m.hw_error}` : "";
+    $(".pulse", el).textContent = m.online ? m.pulse : "—";
+    const zero = m.settings.zero_rad ?? 0;
+    $(".uncal", el).hidden = m.calibrated || !m.online;
+    $(".deg", el).textContent = m.online ? `${fmt(deg(m.angle_rel_rad), 2)}°` : "—";
+    $(".rad", el).textContent = m.online ? fmt(m.angle_rel_rad, 4) : "—";
+    $(".cable", el).textContent = m.cable_mm !== undefined ? `${fmt(m.cable_mm, 2)} mm` : "—";
+    $(".goal", el).textContent = m.online && m.goal_rel_rad !== null ? `${fmt(deg(m.goal_rel_rad), 1)}°` : "—";
+    $(".abs", el).textContent = m.online ? `${fmt(deg(m.angle_rad), 2)}°` : "—";
+    $(".zeroat", el).textContent = m.calibrated ? `${fmt(deg(zero), 2)}° abs` : "not set";
+    $(".vel", el).textContent = m.online ? `${fmt(m.velocity_rpm, 1)} rpm` : "—";
+    $(".cur", el).textContent = !m.online ? "—" : m.ma_per_unit ? `${fmt(m.current_raw * m.ma_per_unit, 0)} mA` : `${m.current_raw} u`;
+    $(".temp", el).textContent = m.online && m.temp_c !== null ? `${m.temp_c} °C` : "";
+    const tq = $(".torque", el); tq.checked = !!m.torque; tq.disabled = !m.online;
+    const [lo, hi] = m.limits_rad.map(r => deg(r - zero));
+    const slider = $(".slider", el);
+    slider.min = lo; slider.max = hi;
+    $(".lo", el).textContent = `${Math.round(lo) || 0}°`; $(".hi", el).textContent = `${Math.round(hi) || 0}°`;
+    if (!c.dragging && m.online) slider.value = deg(m.torque && m.goal_rel_rad !== null ? m.goal_rel_rad : m.angle_rel_rad);
+    const canMove = m.online && m.torque;
+    slider.disabled = !canMove;
+    el.querySelectorAll("[data-jog], .go").forEach(b => b.disabled = !canMove);
+    $(".zero", el).disabled = !m.online;
+    if (!c.settingsLoaded || !el.querySelector("details").open) {
+      $(".radius", el).value = m.settings.radius_mm; $(".invert", el).checked = m.settings.invert;
+      $(".smin", el).value = m.settings.min_deg; $(".smax", el).value = m.settings.max_deg;
+      c.settingsLoaded = true;
+    }
+  });
+}
+
+function connectWs() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onmessage = e => render(JSON.parse(e.data));
+  ws.onclose = () => { $("#dot").classList.remove("on"); $("#status").textContent = "Server unreachable — retrying"; setTimeout(connectWs, 1000); };
+}
+
+async function loadPorts() {
+  const ports = await api("/api/ports").catch(() => []);
+  const sel = $("#port"), cur = sel.value;
+  sel.innerHTML = '<option value="">auto (first FTDI)</option>' +
+    ports.map(p => `<option value="${p.device}">${p.device}${p.emio ? " · EMIO" : ""}</option>`).join("");
+  sel.value = cur;
+}
+
+$("#connect").addEventListener("click", () => api("/api/connect", { port: $("#port").value || null }).then(() => showError("")).catch(() => {}));
+$("#disconnect").addEventListener("click", () => api("/api/disconnect", {}).catch(() => {}));
+$("#calall").addEventListener("click", () => {
+  if (confirm("Set the current position of every motor as 0?")) api("/api/zero_all", {}).then(() => showError("")).catch(() => {});
+});
+$("#hold").addEventListener("click", () => api("/api/hold", {}).catch(() => {}));
+$("#off").addEventListener("click", () => api("/api/torque_off_all", {}).catch(() => {}));
+$("#speed").addEventListener("change", e => api("/api/speed", { profile_velocity: +e.target.value }).catch(() => {}));
+$("#speed").addEventListener("input", e => $("#speedval").textContent = `${(e.target.value * 0.229).toFixed(1)} rpm`);
+$("#port").addEventListener("focus", loadPorts);
+document.addEventListener("pointerup", () => cards.forEach(c => c.dragging = false));
+document.addEventListener("keydown", e => { if (e.key === "Escape") api("/api/torque_off_all", {}).catch(() => {}); });
+
+loadPorts();
+connectWs();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Per-machine settings (calibration zeros, drum radius, limits); recreated with defaults on first run
+data/
+
+# Local environment overrides
+.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
