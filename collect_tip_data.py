@@ -5,9 +5,10 @@ Motors are driven through the motor GUI's API (so its zeros, soft limits and Esc
 and the tip (one green marker) is measured with the calibrated EMIO camera.
 
 Opposing cables: motors 0/2 form pair A, motors 1/3 form pair B. Each pair has one bend value
-d in [-1, 1]: d > 0 pulls the first motor to d * its max safe angle (from its taut zero), d < 0 pulls the
+d in [-1, 1]: d > 0 pulls the first motor to d * its max pull (GUI soft max minus taut zero), d < 0 pulls the
 opposite motor, and the motor not pulling rests released at absolute 0. So within a pair only one motor pulls
 at a time (at most 2 active overall), and moves that cross d = 0 release one cable before pulling the other.
+Moves are done smoothly by the motor GUI (/api/tip/move_bend), so the GUI must be up to date.
 Samples lie on a grid inside the circle dA^2 + dB^2 <= radius^2.
 
 Usage (motor GUI running at http://localhost:8000, emio-venv Python for the camera):
@@ -29,14 +30,13 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# Max safe pull from each motor's taut zero (deg), measured by hand.
+# Max safe pull from each motor's taut zero (deg). Only used by --dry-run: a real run reads it from the
+# motor GUI (soft max minus taut zero), the same mapping the GUI's tip control uses.
 MAX_SAFE_DEG = {0: 146.69, 1: 138.25, 2: 102.4, 3: 113.4}
 PAIRS = {"A": (0, 2), "B": (1, 3)}   # (pulled when d > 0, pulled when d < 0)
 REST_ABS_RAD = 0.0                    # where a released motor rests (absolute angle)
 MA_PER_UNIT = 2.69                    # XM430 current unit
-MAX_SUBSTEP = 0.1                     # largest change in d per intermediate move
 MAX_ERROR_DEG = 8.0                   # settled further than this from the goal = blocked
-CLAMP_TOL_DEG = 0.1                   # GUI clamps smaller than this are rounding, not a real limit
 CALIB_FILE = Path.home() / ".config" / "emioapi" / "camera_2d_points.csv"
 GUI_SETTINGS = Path(__file__).resolve().parent / "motor_gui" / "data" / "settings.json"
 
@@ -90,15 +90,6 @@ def pair_targets(d):
     return out
 
 
-def command(gui, d):
-    for m, (kind, rad) in sorted(pair_targets(d).items()):
-        r = gui.goal_rel(m, rad) if kind == "rel" else gui.goal_abs(m, rad)
-        got = r["angle_rel_rad"] if kind == "rel" else r["angle_rad"]
-        if r.get("clamped") and abs(math.degrees(got - rad)) > CLAMP_TOL_DEG:  # ignore rounding-level clamps
-            raise Abort(f"Motor {m} command clamped by GUI limits by {math.degrees(rad - got):.2f}° (d={d}); "
-                        "check MAX_SAFE_DEG / soft limits")
-
-
 def check_motors(s, max_ma, soft_ma=None):
     for m in s["motors"]:
         if not m["online"]:
@@ -136,36 +127,13 @@ def wait_settled(gui, max_ma, soft_ma=None, timeout=8.0, stable_pulses=2, window
         time.sleep(0.05)
 
 
-def waypoints(cur, tgt):
-    """Path from cur to tgt: pass through d = 0 for any pair that changes sign, in steps <= MAX_SUBSTEP."""
-    stops, here = [], dict(cur)
-    if any(here[p] * tgt[p] < 0 for p in PAIRS):
-        mid = {p: (0.0 if here[p] * tgt[p] < 0 else here[p]) for p in PAIRS}
-        stops.append(mid)
-        here = mid
-    stops.append(dict(tgt))
-    path, prev = [], dict(cur)
-    for stop in stops:
-        n = max(1, math.ceil(max(abs(stop[p] - prev[p]) for p in PAIRS) / MAX_SUBSTEP))
-        path += [{p: prev[p] + (stop[p] - prev[p]) * k / n for p in PAIRS} for k in range(1, n + 1)]
-        prev = stop
-    return path
-
-
 def move(gui, cur, tgt, max_ma, soft_ma=None):
-    """Move to tgt. Returns (pose reached, ForceLimit or None). If a motor passes soft_ma on the way,
-    back off to the last waypoint that was reached without exceeding it and stop there."""
-    last = dict(cur)
-    for wp in waypoints(cur, tgt):
-        command(gui, wp)
-        try:
-            wait_settled(gui, max_ma, soft_ma)
-        except ForceLimit as lim:
-            command(gui, last)
-            wait_settled(gui, max_ma)  # backing off releases the overloaded cable
-            return last, lim
-        last = wp
-    return dict(tgt), None
+    """Smooth move to bend values tgt, done by the motor GUI (/api/tip/move_bend): goals are streamed with
+    an ease-in/out, a pair that changes sign releases one cable before the opposite pulls, and above soft_ma
+    it backs off and stops short. Returns (pose reached, ForceLimit or None)."""
+    r = gui._req("tip/move_bend", {"A": tgt["A"], "B": tgt["B"], "soft_ma": soft_ma, "hard_ma": max_ma})
+    lim = r["limited"]
+    return r["pose"], (ForceLimit(lim["motor"], lim["ma"]) if lim else None)
 
 
 def release_all(gui):
@@ -266,6 +234,10 @@ def main():
         if uncal:
             raise Abort(f"Motors {uncal} have no taut zero; calibrate them in the GUI first")
         check_motors(s, args.max_current_ma)
+        for m in s["motors"]:
+            MAX_SAFE_DEG[m["id"]] = m["settings"]["max_deg"] - math.degrees(m["settings"]["zero_rad"])
+        print("Max pull from taut zero (from GUI soft limits): "
+              + ", ".join(f"m{m} {v:.1f}°" for m, v in MAX_SAFE_DEG.items()))
         cam = open_camera(args.show)
         tip, std, n, seen = measure_tip(cam, args.frames)
         print(f"Camera: {seen} marker(s) seen; tip {['%.1f' % v for v in tip] if tip else None} (std {std:.2f} mm)")

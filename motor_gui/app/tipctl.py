@@ -20,7 +20,10 @@ import motors
 PAIRS = {"A": (0, 2), "B": (1, 3)}
 QUADRANTS = {"++": (1, 1), "+-": (1, -1), "-+": (-1, 1), "--": (-1, -1)}
 REST_ABS_RAD = 0.0
-MAX_SUBSTEP = 0.1        # largest change in d per intermediate move
+TICK_S = 0.05            # goal update interval while streaming a move
+SPEED_MARGIN = 0.85      # stream at most this fraction of the motors' speed limit
+MIN_SEGMENT_S = 0.4      # shortest streamed move
+BACKOFF_S = 0.4          # on a force limit, go back to where the goals were this long ago
 SOFT_MA = 1000           # above this: back off and stop short
 HARD_MA = 1100           # above this: release all motors and abort
 MA_PER_UNIT = 2.69
@@ -99,21 +102,6 @@ def clip_disk(d):
     return d / r if r > 1 else d
 
 
-def waypoints(cur, tgt):
-    """Path from cur to tgt: pass through d = 0 for any pair that changes sign, in steps <= MAX_SUBSTEP."""
-    stops, here = [], dict(cur)
-    if any(here[p] * tgt[p] < 0 for p in PAIRS):
-        here = {p: (0.0 if here[p] * tgt[p] < 0 else here[p]) for p in PAIRS}
-        stops.append(here)
-    stops.append(dict(tgt))
-    path, prev = [], dict(cur)
-    for stop in stops:
-        n = max(1, math.ceil(max(abs(stop[p] - prev[p]) for p in PAIRS) / MAX_SUBSTEP))
-        path += [{p: prev[p] + (stop[p] - prev[p]) * k / n for p in PAIRS} for k in range(1, n + 1)]
-        prev = stop
-    return path
-
-
 class TipController:
     def __init__(self, ctl, model_path):
         self.ctl = ctl
@@ -123,6 +111,8 @@ class TipController:
         self.status = {"state": "idle", "target": None, "iteration": 0, "error_mm": None, "message": ""}
         self._thread = None
         self._stop = threading.Event()
+        self._motion = threading.Lock()  # one move at a time (tip goto or move_bend)
+        self.soft_ma, self.hard_ma = SOFT_MA, HARD_MA
 
     # -- model / feed -------------------------------------------------------------
     @property
@@ -182,36 +172,39 @@ class TipController:
                 out[m] = zero + abs(v) * self.max_pull_rad(m) if active else REST_ABS_RAD
         return out
 
-    # -- motion -------------------------------------------------------------------
+    # -- motion ---------------------------------------------------------------------
     def _goal(self, i, rad):
         lo, hi = self.ctl.limits_rad(i)
         pulse = motors.to_pulse(min(max(rad, lo), hi))
         self.ctl.bus.set_goal(i, pulse)
         self.ctl.commanded[i] = (pulse, time.monotonic())
 
-    def _command(self, d):
-        for i, rad in sorted(self.targets_abs(d).items()):
-            self._goal(i, rad)
+    def _check(self, soft, pulling=None):
+        """Safety checks on the latest motor state; raises Stopped / Fail / ForceLimit. The soft current
+        limit only applies to motors in `pulling` (all if None): a motor releasing a tense cable must never
+        be stopped from releasing. The hard limit applies to every motor."""
+        if self._stop.is_set():
+            raise Stopped()
+        st = self.ctl.state
+        for i in motors.IDS:
+            m = st.get(i)
+            if m is None:
+                raise Fail(f"motor {i} not responding")
+            if m["hw_error"]:
+                raise Fail(f"motor {i} hardware error {m['hw_error']}")
+            if not m["torque"]:
+                raise Fail(f"motor {i} torque is off")
+            ma = abs(m["current_raw"]) * MA_PER_UNIT
+            if ma > self.hard_ma:
+                raise Fail(f"motor {i} current {ma:.0f} mA > {self.hard_ma:.0f} mA")
+            if soft and ma > self.soft_ma and (pulling is None or i in pulling):
+                raise ForceLimit(i, ma)
+        return st
 
-    def _wait_settled(self, soft=True, timeout=8.0, window=8):
+    def _wait_settled(self, soft=True, timeout=8.0, window=8, pulling=None):
         t0, hist = time.monotonic(), []
         while True:
-            if self._stop.is_set():
-                raise Stopped()
-            st = self.ctl.state
-            for i in motors.IDS:
-                m = st.get(i)
-                if m is None:
-                    raise Fail(f"motor {i} not responding")
-                if m["hw_error"]:
-                    raise Fail(f"motor {i} hardware error {m['hw_error']}")
-                if not m["torque"]:
-                    raise Fail(f"motor {i} torque is off")
-                ma = abs(m["current_raw"]) * MA_PER_UNIT
-                if ma > HARD_MA:
-                    raise Fail(f"motor {i} current {ma:.0f} mA > {HARD_MA} mA")
-                if soft and ma > SOFT_MA:
-                    raise ForceLimit(i, ma)
+            st = self._check(soft, pulling)
             hist = (hist + [[st[i]["pulse"] for i in motors.IDS]])[-window:]
             if len(hist) == window and all(max(c) - min(c) <= 2 for c in zip(*hist)):
                 far = [i for i in motors.IDS
@@ -223,18 +216,54 @@ class TipController:
                 raise Fail(f"motors still moving after {timeout} s")
             time.sleep(0.06)
 
+    def _current_goals(self):
+        return {i: motors.to_angle(self.ctl.state[i]["goal_pulse"]) for i in motors.IDS}
+
+    def _stream(self, start, end):
+        """Stream goals smoothly from `start` to `end` (absolute angles per motor, rad), easing in and out,
+        then wait for the arm to stop. Speed follows the GUI's speed setting. If a pulling motor passes the
+        soft current limit, back off to where the motors actually were BACKOFF_S earlier and return the
+        ForceLimit; otherwise return None."""
+        speed = self.ctl.settings["profile_velocity"] * motors.VELOCITY_UNIT_RPM * 6  # deg/s
+        span = max(abs(math.degrees(end[i] - start[i])) for i in motors.IDS)
+        duration = max(MIN_SEGMENT_S, 1.5 * span / (SPEED_MARGIN * speed))  # smoothstep peaks at 1.5x mean
+        pulling = {i for i in motors.IDS if end[i] > start[i] + math.radians(0.5)}
+        seen, t0 = [], time.monotonic()  # (time, measured absolute angles)
+        try:
+            while True:
+                u = min(1.0, (time.monotonic() - t0) / duration)
+                k = u * u * (3 - 2 * u)
+                for i in motors.IDS:
+                    self._goal(i, start[i] + (end[i] - start[i]) * k)
+                st = self._check(soft=True, pulling=pulling)
+                seen.append((time.monotonic(), {i: motors.to_angle(st[i]["pulse"]) for i in motors.IDS}))
+                if u >= 1:
+                    break
+                time.sleep(TICK_S)
+            self._wait_settled(pulling=pulling)
+            return None
+        except ForceLimit as lim:
+            now = time.monotonic()
+            back = next((a for t, a in reversed(seen) if now - t >= BACKOFF_S), start)
+            for i, g in back.items():
+                self._goal(i, g)
+            self._wait_settled(soft=False)
+            return lim
+
     def _move(self, cur, tgt):
-        """Move along safe waypoints. Returns (pose reached, ForceLimit or None)."""
-        last = dict(cur)
-        for wp in waypoints(cur, tgt):
-            self._command(wp)
-            try:
-                self._wait_settled()
-            except ForceLimit as lim:
-                self._command(last)
-                self._wait_settled(soft=False)
-                return last, lim
-            last = wp
+        """Move smoothly to bend values tgt. A pair that changes sign first releases its pulling cable (the
+        only stop on the way) before the opposite cable pulls. Returns (pose, ForceLimit or None)."""
+        stops = []
+        if any(cur[p] * tgt[p] < 0 for p in PAIRS):
+            stops.append({p: (0.0 if cur[p] * tgt[p] < 0 else cur[p]) for p in PAIRS})
+        stops.append(dict(tgt))
+        start = self._current_goals()
+        for stop in stops:
+            end = self.targets_abs(stop)
+            lim = self._stream(start, end)
+            if lim:
+                return self.pose(), lim
+            start = end
         return dict(tgt), None
 
     def _release_all(self):
@@ -247,12 +276,12 @@ class TipController:
     # -- public -------------------------------------------------------------------
     @property
     def busy(self):
-        return self._thread is not None and self._thread.is_alive()
+        return self._motion.locked()
 
-    def check_ready(self):
+    def check_ready(self, need_model=True):
         if not self.ctl.bus:
             raise ValueError("Not connected")
-        if self.model is None:
+        if need_model and self.model is None:
             raise ValueError(f"No tip model at {self.model_path}; run fit_tip_model.py first")
         if any(m["zero_rad"] is None for m in self.ctl.settings["motors"]):
             raise ValueError("Calibrate every motor's taut zero first")
@@ -263,12 +292,52 @@ class TipController:
         if self.busy:
             raise ValueError("Already moving; press Stop first")
 
+    def _prepare(self):
+        """Torque on (holding position) with the speed and acceleration profile applied."""
+        self.ctl.apply_motion_profile(self.ctl.bus)
+        for i in motors.IDS:
+            if not self.ctl.state[i]["torque"]:
+                self.ctl.bus.set_torque(i, True)
+                self.ctl.state[i] = {**self.ctl.state[i], "torque": True}
+                self.ctl.commanded.pop(i, None)
+
     def goto(self, x, z, closed_loop=True):
         self.check_ready()
+        if not self._motion.acquire(blocking=False):
+            raise ValueError("Already moving; press Stop first")
         self._stop.clear()
         self.status = {"state": "moving", "target": [x, z], "iteration": 0, "error_mm": None, "message": "starting"}
-        self._thread = threading.Thread(target=self._run, args=(x, z, closed_loop), daemon=True)
-        self._thread.start()
+
+        def run():
+            try:
+                self._run(x, z, closed_loop)
+            finally:
+                self._motion.release()
+        threading.Thread(target=run, daemon=True).start()
+
+    def move_bend(self, a, b, soft_ma=None, hard_ma=None):
+        """Blocking smooth move to bend values (a, b), used by collect_tip_data.py.
+        Returns {"pose", "limited"}; raises ValueError (not ready / busy / stopped) or RuntimeError (fault)."""
+        self.check_ready(need_model=False)
+        if math.hypot(a, b) > 1 + 1e-9:
+            raise ValueError("bend values must satisfy dA^2 + dB^2 <= 1")
+        if not self._motion.acquire(blocking=False):
+            raise ValueError("Already moving; press Stop first")
+        self._stop.clear()
+        self.soft_ma, self.hard_ma = soft_ma or SOFT_MA, hard_ma or HARD_MA
+        try:
+            self._prepare()
+            pose, lim = self._move(self.pose(), {"A": a, "B": b})
+            return {"pose": pose, "limited": {"motor": lim.motor, "ma": lim.ma} if lim else None}
+        except Stopped:
+            self._hold()
+            raise ValueError("stopped")
+        except Fail as e:
+            self._release_all()
+            raise RuntimeError(f"{e}; released motors to rest")
+        finally:
+            self.soft_ma, self.hard_ma = SOFT_MA, HARD_MA
+            self._motion.release()
 
     def stop(self):
         self._stop.set()
@@ -276,12 +345,7 @@ class TipController:
     def _run(self, x, z, closed_loop):
         st = self.status
         try:
-            bus = self.ctl.bus
-            bus.set_profile_velocity(self.ctl.settings["profile_velocity"])
-            for i in motors.IDS:
-                if not self.ctl.state[i]["torque"]:
-                    bus.set_torque(i, True)  # holds the current position
-                    self.ctl.commanded.pop(i, None)
+            self._prepare()
             model = self.model
             target = np.array([x, z])
             d0, pred, dist = model.inverse(x, z)

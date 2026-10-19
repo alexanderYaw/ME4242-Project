@@ -20,6 +20,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parent.paren
 SETTINGS_FILE = DATA_DIR / "settings.json"
 POLL_HZ = 20
 DEFAULT_MOTOR_SETTINGS = {"radius_mm": 20.0, "zero_rad": None, "invert": False, "min_deg": 0.0, "max_deg": 180.0}
+PROFILE_ACCELERATION = 20  # x 214.6 rev/min^2: ~0.2 s ease-in/out at 15 rpm (0 = instant, abrupt)
 DEFAULT_SETTINGS = {"profile_velocity": 30, "motors": [dict(DEFAULT_MOTOR_SETTINGS) for _ in motors.IDS]}
 
 
@@ -45,6 +46,11 @@ class Controller:
         self.settings = load_settings()
         threading.Thread(target=self._poll, daemon=True).start()
 
+    def apply_motion_profile(self, bus):
+        """Speed limit and acceleration ramp. Motors forget both after a reboot or power loss."""
+        bus.set_profile_velocity(self.settings["profile_velocity"])
+        bus.set_profile_acceleration(PROFILE_ACCELERATION)
+
     def save_settings(self):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         tmp = SETTINGS_FILE.with_suffix(".tmp")
@@ -62,7 +68,7 @@ class Controller:
             bus = motors.DynamixelBus(port)
         try:
             static = bus.static_info()
-            bus.set_profile_velocity(self.settings["profile_velocity"])
+            self.apply_motion_profile(bus)
         except Exception:
             bus.close()
             raise
@@ -220,7 +226,7 @@ def torque(mid: int, req: TorqueReq):
     try:
         if req.on:
             # A motor that rebooted or lost power comes back with no speed limit: re-apply it.
-            bus.set_profile_velocity(ctl.settings["profile_velocity"])
+            ctl.apply_motion_profile(bus)
         bus.set_torque(mid, req.on)
     except RuntimeError as e:
         raise HTTPException(500, str(e))
@@ -240,7 +246,7 @@ def reboot(mid: int):
         bus.reboot(mid)
     except RuntimeError as e:
         raise HTTPException(500, str(e))
-    bus.set_profile_velocity(ctl.settings["profile_velocity"])
+    ctl.apply_motion_profile(bus)
     ctl.commanded.pop(mid, None)
     return {"ok": True}
 
@@ -398,6 +404,24 @@ def tip_goto(req: TipGotoReq):
     except ValueError as e:
         raise HTTPException(409, str(e))
     return tip.status
+
+
+class MoveBendReq(BaseModel):
+    A: float = Field(ge=-1, le=1)
+    B: float = Field(ge=-1, le=1)
+    soft_ma: float | None = None
+    hard_ma: float | None = None
+
+
+@app.post("/api/tip/move_bend")
+def tip_move_bend(req: MoveBendReq):
+    """Blocking smooth move to bend values (pairs 0/2 = A, 1/3 = B), for collect_tip_data.py."""
+    try:
+        return tip.move_bend(req.A, req.B, req.soft_ma, req.hard_ma)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/tip/stop")

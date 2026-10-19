@@ -29,6 +29,7 @@ ADDR_MAX_POS_LIMIT = 48
 ADDR_MIN_POS_LIMIT = 52
 ADDR_TORQUE_ENABLE = 64      # block 64..70 also holds hardware error status (70)
 ADDR_HW_ERROR = 70
+ADDR_PROFILE_ACCELERATION = 108
 ADDR_PROFILE_VELOCITY = 112
 ADDR_GOAL_POSITION = 116     # block 116..122 also holds moving flag (122)
 ADDR_MOVING = 122
@@ -195,6 +196,13 @@ class DynamixelBus:
             except RuntimeError:
                 pass  # missing motor; reported through read_state
 
+    def set_profile_acceleration(self, value):
+        for i in IDS:
+            try:
+                self._write(i, ADDR_PROFILE_ACCELERATION, 4, value)
+            except RuntimeError:
+                pass
+
     def reboot(self, motor_id):
         """Reboot one motor: clears hardware errors (e.g. overload). It comes back with torque off and
         RAM settings (profile velocity) reset to defaults, so the caller must re-apply them."""
@@ -254,6 +262,9 @@ class MockBus:
 
     def set_profile_velocity(self, value):
         self._profile = value
+
+    def set_profile_acceleration(self, value):
+        pass
 
     def reboot(self, motor_id):
         with self.lock:
