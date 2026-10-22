@@ -424,6 +424,34 @@ def tip_move_bend(req: MoveBendReq):
         raise HTTPException(500, str(e))
 
 
+class JoyReq(BaseModel):
+    mode: str = Field("tip", pattern="^(tip|bend)$")
+    x: float = Field(0.0, ge=-1.5, le=1.5)
+    y: float = Field(0.0, ge=-1.5, le=1.5)
+    enable: bool = False
+    control: str = Field("rate", pattern="^(rate|position)$")
+
+
+@app.post("/api/tip/joy/start")
+def joy_start():
+    try:
+        tip.joy_start()
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/tip/joy")
+def joy_input(req: JoyReq):
+    """Stick input from the GUI (~20 Hz). The arm only moves while `enable` (the dead-man trigger) is held
+    and inputs keep arriving."""
+    try:
+        tip.joy_input(req.mode, req.x, req.y, req.enable, req.control)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
+
+
 @app.post("/api/tip/stop")
 def tip_stop():
     tip.stop()

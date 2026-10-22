@@ -9,13 +9,15 @@ d in [-1, 1]: d > 0 pulls the first motor to d * its max pull (GUI soft max minu
 opposite motor, and the motor not pulling rests released at absolute 0. So within a pair only one motor pulls
 at a time (at most 2 active overall), and moves that cross d = 0 release one cable before pulling the other.
 Moves are done smoothly by the motor GUI (/api/tip/move_bend), so the GUI must be up to date.
-Samples lie on a grid inside the circle dA^2 + dB^2 <= radius^2.
+Samples lie on a square grid, |dA| <= radius and |dB| <= radius, so two neighbouring motors (e.g. 0 and 1)
+can both pull up to their full max together (the corners). --shape circle keeps the older, more cautious
+dA^2 + dB^2 <= radius^2. Corners that hit the soft current limit are logged as force-limited, not fatal.
 
 Usage (motor GUI running at http://localhost:8000, emio-venv Python for the camera):
   ~/emio-venv/bin/python collect_tip_data.py --check              # no motion: check GUI, motors, camera
   ~/emio-venv/bin/python collect_tip_data.py --dry-run            # print the plan, no motion
-  ~/emio-venv/bin/python collect_tip_data.py --radius 0.5         # small first run
-  ~/emio-venv/bin/python collect_tip_data.py                      # full run (radius 1.0)
+  ~/emio-venv/bin/python collect_tip_data.py --radius 0.5         # small first run (square, half range)
+  ~/emio-venv/bin/python collect_tip_data.py                      # full square run
 Ctrl+C at any time releases all motors to rest and stops.
 """
 import argparse
@@ -37,6 +39,7 @@ PAIRS = {"A": (0, 2), "B": (1, 3)}   # (pulled when d > 0, pulled when d < 0)
 REST_ABS_RAD = 0.0                    # where a released motor rests (absolute angle)
 MA_PER_UNIT = 2.69                    # XM430 current unit
 MAX_ERROR_DEG = 8.0                   # settled further than this from the goal = blocked
+MOVE_TIMEOUT_S = 90                   # longest a single move may take before the run aborts
 CALIB_FILE = Path.home() / ".config" / "emioapi" / "camera_2d_points.csv"
 GUI_SETTINGS = Path(__file__).resolve().parent / "motor_gui" / "data" / "settings.json"
 
@@ -57,15 +60,17 @@ class Gui:
     def __init__(self, url):
         self.url = url.rstrip("/")
 
-    def _req(self, path, body=None):
+    def _req(self, path, body=None, timeout=5):
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(f"{self.url}/{path}", data, {"Content-Type": "application/json"})
         try:
-            return json.load(urllib.request.urlopen(req, timeout=5))
+            return json.load(urllib.request.urlopen(req, timeout=timeout))
         except urllib.error.HTTPError as e:
             raise Abort(f"GUI API {path}: {e.code} {e.read().decode(errors='replace')}") from None
         except urllib.error.URLError as e:
             raise Abort(f"Motor GUI not reachable at {self.url} ({e.reason}). Is it running?") from None
+        except (TimeoutError, OSError) as e:
+            raise Abort(f"GUI API {path}: no answer within {timeout} s ({e})") from None
 
     def state(self):
         return self._req("state")
@@ -131,7 +136,9 @@ def move(gui, cur, tgt, max_ma, soft_ma=None):
     """Smooth move to bend values tgt, done by the motor GUI (/api/tip/move_bend): goals are streamed with
     an ease-in/out, a pair that changes sign releases one cable before the opposite pulls, and above soft_ma
     it backs off and stops short. Returns (pose reached, ForceLimit or None)."""
-    r = gui._req("tip/move_bend", {"A": tgt["A"], "B": tgt["B"], "soft_ma": soft_ma, "hard_ma": max_ma})
+    # A move can take a while (a long swing, a release across the centre, settling): wait for it.
+    r = gui._req("tip/move_bend", {"A": tgt["A"], "B": tgt["B"], "soft_ma": soft_ma, "hard_ma": max_ma},
+                 timeout=MOVE_TIMEOUT_S)
     lim = r["limited"]
     return r["pose"], (ForceLimit(lim["motor"], lim["ma"]) if lim else None)
 
@@ -175,12 +182,19 @@ def measure_tip(cam, frames, prev=None):
 
 
 # ---------------------------------------------------------------- plan
-def grid_plan(n, radius):
-    vals = [radius * (-1 + 2 * k / (n - 1)) for k in range(n)]
+def grid_plan(n, radius, shape="square"):
+    """Grid points ordered from the centre outwards, ring by ring (each ring walked around in order), so the
+    load builds up gradually and the corners (two neighbouring motors at full pull) come last."""
+    c = (n - 1) / 2
+    val = lambda k: radius * (k - c) / c
+    pts = [(i, j) for i in range(n) for j in range(n)]
+    ring = lambda p: max(abs(p[0] - c), abs(p[1] - c))
+    angle = lambda p: math.atan2(p[1] - c, p[0] - c) % (2 * math.pi)
     plan = []
-    for r, a in enumerate(vals):  # serpentine: neighbouring samples are one grid step apart
-        row = [{"A": a, "B": b} for b in (vals if r % 2 == 0 else vals[::-1])]
-        plan += [d for d in row if math.hypot(d["A"], d["B"]) <= radius + 1e-9]
+    for k in sorted({ring(p) for p in pts}):
+        plan += [{"A": val(i), "B": val(j)} for i, j in sorted((p for p in pts if ring(p) == k), key=angle)]
+    if shape == "circle":
+        plan = [d for d in plan if math.hypot(d["A"], d["B"]) <= radius + 1e-9]
     return plan
 
 
@@ -189,7 +203,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--api", default="http://localhost:8000/api")
     ap.add_argument("--grid", type=int, default=9, help="grid points per axis (default 9)")
-    ap.add_argument("--radius", type=float, default=1.0, help="max bend as a fraction of max safe angle (0-1)")
+    ap.add_argument("--radius", type=float, default=1.0,
+                    help="max bend per pair as a fraction of each motor's max pull (0-1, default 1)")
+    ap.add_argument("--shape", choices=("square", "circle"), default="square",
+                    help="square: each pair independently up to radius (default); circle: dA^2 + dB^2 <= radius^2")
     ap.add_argument("--revisits", type=int, default=20, help="random revisits of grid points, for hysteresis")
     ap.add_argument("--frames", type=int, default=10, help="camera frames averaged per sample")
     ap.add_argument("--settle", type=float, default=0.8, help="extra wait after motors stop (s)")
@@ -210,7 +227,7 @@ def main():
         sys.exit("--soft-current-ma must be below --max-current-ma")
     MAX_ERROR_DEG = args.max_error_deg
 
-    plan = [("grid", d) for d in grid_plan(args.grid, args.radius)]
+    plan = [("grid", d) for d in grid_plan(args.grid, args.radius, args.shape)]
     rng = random.Random(args.seed)
     plan += [("revisit", d) for _, d in rng.sample(plan, min(args.revisits, len(plan)))]
 
@@ -306,6 +323,11 @@ def main():
         if moving:
             release_all(gui)
         sys.exit(1)
+    except Exception as e:  # anything unexpected: still never leave the arm pulled
+        print(f"\nERROR: {type(e).__name__}: {e}" + ("\nReleasing motors to rest." if moving else ""))
+        if moving:
+            release_all(gui)
+        raise
     finally:
         if cam:
             cam.close()

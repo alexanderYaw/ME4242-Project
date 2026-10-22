@@ -33,6 +33,19 @@ TOLERANCE_MM = 3.0
 MAX_ITERATIONS = 8
 MAX_CORRECTION = 0.15    # largest change in d per closed-loop correction
 OUTSIDE_MM = 15.0        # target further than this from the model's reach = outside the workspace
+JOY_TICK_S = 0.05        # gamepad follow loop interval
+JOY_STALE_S = 0.3        # gamepad input older than this = hold (tab hidden, gamepad unplugged, ...)
+JOY_WALL_CLEAR = 0.02    # a force-limit wall clears as soon as the target eases off this far (bend units)
+JOY_WALL_RETRY_S = 2.0   # ... or after this long, to re-try the limit (it may have been a brief spike)
+JOY_BACKOFF_S = 0.15     # gamepad: on a force limit, go back to where the motors were this long ago
+JOY_POLAR_MIN_R = 0.1    # below this bend, follow the stick in a straight line (direction is ill-defined)
+JOY_FLICK_JUMP = math.radians(90)  # stick direction jumping this much between two inputs = flick across
+PAYOUT_RATIO = 1.0       # taut mode: the opposite motor unwinds this many degrees per degree its partner winds in
+PAYOUT_GUARD_MA = 300    # taut mode: a paying-out motor above this current unwinds further on its own ...
+PAYOUT_RELIEF_STEP = math.radians(1.0)  # ... this much per tick
+TAUT_RAMP_S = 0.5        # taut mode: cables are tightened to taut over this long, while the trigger is held
+JOY_LEAD = 0.1           # jog: how far the target may run ahead of the arm (bend units) ...
+JOY_LEAD_MM = 15.0       # ... or, in tip mode, in mm; so the arm stops where it is when you let go
 
 
 class Stopped(Exception):
@@ -62,6 +75,18 @@ class TipModel:
         self.grid_xz = self.predict(self.grid_d)[:, [0, 2]]
         t = np.linspace(0, 2 * math.pi, 181)
         self.outline_xz = self.predict(np.column_stack([np.cos(t), np.sin(t)]))[:, [0, 2]]
+        self.rest_xz = self.predict([[0.0, 0.0]])[0, [0, 2]]
+        rel = self.outline_xz - self.rest_xz
+        order = np.argsort(np.arctan2(rel[:, 1], rel[:, 0]))
+        self._reach_ang = np.arctan2(rel[:, 1], rel[:, 0])[order]
+        self._reach_r = np.hypot(rel[:, 0], rel[:, 1])[order]
+        self.mm_per_bend = float(np.mean(self._reach_r))  # typical tip travel for a full unit of bend
+
+    def reach_mm(self, angle):
+        """Distance from the rest tip to the edge of the reachable area, in direction `angle` (top view)."""
+        a = np.concatenate([self._reach_ang - 2 * np.pi, self._reach_ang, self._reach_ang + 2 * np.pi])
+        r = np.tile(self._reach_r, 3)
+        return float(np.interp(angle, a, r))
 
     def _features(self, D):
         a, b = D[:, 0], D[:, 1]
@@ -97,6 +122,15 @@ class TipModel:
         return d, p, float(np.linalg.norm(p - t))
 
 
+def clamp_bend(d, square=False):
+    """Keep bend values in range: the unit square (each pair independently up to its full pull) or the unit
+    circle (combined limit, used where the tip model applies)."""
+    if square:
+        return {p: max(-1.0, min(1.0, v)) for p, v in d.items()}
+    r = math.hypot(d["A"], d["B"])
+    return {p: v / r for p, v in d.items()} if r > 1 else d
+
+
 def clip_disk(d):
     r = math.hypot(*d)
     return d / r if r > 1 else d
@@ -111,8 +145,9 @@ class TipController:
         self.status = {"state": "idle", "target": None, "iteration": 0, "error_mm": None, "message": ""}
         self._thread = None
         self._stop = threading.Event()
-        self._motion = threading.Lock()  # one move at a time (tip goto or move_bend)
+        self._motion = threading.Lock()  # one move at a time (tip goto, move_bend or gamepad)
         self.soft_ma, self.hard_ma = SOFT_MA, HARD_MA
+        self.joy = {"active": False, "message": ""}
 
     # -- model / feed -------------------------------------------------------------
     @property
@@ -149,12 +184,13 @@ class TipController:
         s = self.ctl.settings["motors"][i]
         return math.radians(s["max_deg"]) - s["zero_rad"]
 
-    def pose(self):
-        """Current bend values from the measured motor angles."""
+    def pose(self, angles=None):
+        """Bend values from motor angles (absolute, rad); default: the current measured angles."""
+        if angles is None:
+            angles = {m: motors.to_angle(self.ctl.state[m]["pulse"]) for m in motors.IDS}
         d = {}
         for p, (pos, neg) in PAIRS.items():
-            rel = {m: motors.to_angle(self.ctl.state[m]["pulse"]) - self.ctl.settings["motors"][m]["zero_rad"]
-                   for m in (pos, neg)}
+            rel = {m: angles[m] - self.ctl.settings["motors"][m]["zero_rad"] for m in (pos, neg)}
             if rel[pos] > math.radians(0.5):
                 d[p] = min(1.0, rel[pos] / self.max_pull_rad(pos))
             elif rel[neg] > math.radians(0.5):
@@ -163,13 +199,23 @@ class TipController:
                 d[p] = 0.0
         return d
 
-    def targets_abs(self, d):
+    def targets_abs(self, d, taut=0.0, relief=None):
+        """Absolute motor angles for bend values d. The pulling motor of each pair winds in to its taut zero plus
+        |d| * its max pull. Its opposite: with taut = 0 it rests slack at absolute 0 (data collection, tip model);
+        with taut = 1 it sits at its own taut zero and unwinds by PAYOUT_RATIO times the angle its opposite winds
+        in, down to slack ("taut and pay out"), so at the centre all four cables are just taut. 0 < taut < 1
+        blends the two (ramping in). relief: extra unwinding per motor (rad) from the tension guard."""
         out = {}
         for p, (pos, neg) in PAIRS.items():
             v = d[p]
-            for m, active in ((pos, v > 0), (neg, v < 0)):
+            for m, other, active in ((pos, neg, v > 0), (neg, pos, v < 0)):
                 zero = self.ctl.settings["motors"][m]["zero_rad"]
-                out[m] = zero + abs(v) * self.max_pull_rad(m) if active else REST_ABS_RAD
+                if active:
+                    out[m] = zero + abs(v) * self.max_pull_rad(m)
+                    continue
+                wound_in = abs(v) * self.max_pull_rad(other) if v != 0 else 0.0
+                paid_out = max(REST_ABS_RAD, zero - PAYOUT_RATIO * wound_in - (relief or {}).get(m, 0.0))
+                out[m] = REST_ABS_RAD + taut * (paid_out - REST_ABS_RAD)
         return out
 
     # -- motion ---------------------------------------------------------------------
@@ -319,8 +365,8 @@ class TipController:
         """Blocking smooth move to bend values (a, b), used by collect_tip_data.py.
         Returns {"pose", "limited"}; raises ValueError (not ready / busy / stopped) or RuntimeError (fault)."""
         self.check_ready(need_model=False)
-        if math.hypot(a, b) > 1 + 1e-9:
-            raise ValueError("bend values must satisfy dA^2 + dB^2 <= 1")
+        if abs(a) > 1 + 1e-9 or abs(b) > 1 + 1e-9:
+            raise ValueError("bend values must be within -1..1")
         if not self._motion.acquire(blocking=False):
             raise ValueError("Already moving; press Stop first")
         self._stop.clear()
@@ -414,9 +460,252 @@ class TipController:
                 except Exception:
                     pass
 
+    # -- gamepad follow mode ------------------------------------------------------------
+    def joy_start(self):
+        self.check_ready(need_model=False)
+        if not self._motion.acquire(blocking=False):
+            raise ValueError("Already moving; press Stop first")
+        self._stop.clear()
+        self.joy = {"active": True, "enable": False, "set": None, "t": 0.0, "cmd": None, "walls": {},
+                    "turn": None, "flick": False, "stick": None, "control": "rate", "tgt_d": None, "tgt_xz": None,
+                    "message": "hold the trigger (RT / R2) to move"}
+
+        def run():
+            try:
+                self._joy_loop()
+            finally:
+                self.joy["active"] = False
+                self._motion.release()
+        threading.Thread(target=run, daemon=True).start()
+
+    def joy_input(self, mode, x, y, enable, control="rate"):
+        """Latest stick input (x, y in [-1, 1]); mode "bend" (x -> pair A, y -> pair B) or "tip" (top view).
+        control "rate" (jog): the stick sets how fast the target moves and letting go leaves it where it is;
+        "position": the stick points at a spot (full deflection = edge of the reachable area / full bend)."""
+        if not self.joy.get("active"):
+            raise ValueError("Gamepad control is not active")
+        m = math.hypot(x, y)
+        if m > 1:
+            x, y, m = x / m, y / m, 1.0
+        if mode == "bend" and m > 0:
+            # motor pairs: each axis drives its own pair with no combined limit, so stretch the stick's round
+            # range onto the square: a full diagonal pulls both pairs fully
+            k = m / max(abs(x), abs(y))
+            x, y = max(-1.0, min(1.0, x * k)), max(-1.0, min(1.0, y * k))
+        if mode == "tip" and self.model is None:
+            raise ValueError("Top-view mapping needs a tip model; use the motor-pair mapping")
+        if control == "rate":
+            self.joy.update(stick=(x, y), mode=mode, control="rate", t=time.monotonic(), enable=bool(enable))
+            return
+        if mode == "tip":
+            model = self.model
+            if model is None:
+                raise ValueError("Top-view mapping needs a tip model; use the motor-pair mapping")
+            ang = math.atan2(y, x)
+            target = model.rest_xz + m * model.reach_mm(ang) * np.array([math.cos(ang), math.sin(ang)])
+            d = model.inverse(*target)[0]
+            want = {"A": float(d[0]), "B": float(d[1])}
+        else:
+            want = {"A": float(x), "B": float(y)}
+        j = self.joy
+        if math.hypot(want["A"], want["B"]) < JOY_POLAR_MIN_R:
+            j["turn"] = None  # through the centre: direction undefined
+        else:
+            ang = math.atan2(want["B"], want["A"])
+            if j.get("turn") is None:
+                # fresh direction (first input, or coming out of the centre): go straight, unless the arm is
+                # already bent that way (the loop clears the flick once the directions line up)
+                j["turn"], j["flick"] = ang, True
+            else:
+                jump = (ang - j["turn"] + math.pi) % (2 * math.pi) - math.pi
+                if abs(jump) > JOY_FLICK_JUMP:  # far too fast for a sweep: a flick across the centre
+                    j["turn"], j["flick"] = ang, True
+                else:
+                    j["turn"] += jump
+        j.update(set=want, stick=(x, y), mode=mode, control="position", t=time.monotonic(), enable=bool(enable))
+
+    @staticmethod
+    def _joy_step(d, target, step, arm_turn, stick_turn, straight, square=False):
+        """One follow step of at most `step` (bend units) from d toward target.
+
+        Normally the bend amount and the bend direction are followed separately: the direction rotates the
+        way the stick has been turning (`stick_turn` and `arm_turn` are unwrapped angles), at most half a turn
+        behind it, so a stick swept around faster than the motors can follow makes the arm swing around at its
+        bend instead of cutting across the middle. `straight` (a flick across, or a small bend) goes in a
+        straight line. Returns (next d, next arm_turn)."""
+        r0, r1 = math.hypot(d["A"], d["B"]), math.hypot(target["A"], target["B"])
+        if not square:
+            r1 = min(1.0, r1)
+        if straight or stick_turn is None or r0 < JOY_POLAR_MIN_R or r1 < JOY_POLAR_MIN_R:
+            dx, dy = target["A"] - d["A"], target["B"] - d["B"]
+            n = math.hypot(dx, dy)
+            k = 1.0 if n <= step else step / n
+            out = {"A": d["A"] + dx * k, "B": d["B"] + dy * k}
+            th = math.atan2(out["B"], out["A"])
+            ref = stick_turn if stick_turn is not None else th
+            arm_turn = ref + (th - ref + math.pi) % (2 * math.pi) - math.pi  # re-sync near the stick's turn
+        else:
+            lag = max(-math.pi, min(math.pi, stick_turn - arm_turn))  # drop extra turns: trail by <= half a turn
+            dr = max(-step, min(step, r1 - r0))
+            dth_max = math.sqrt(max(0.0, step * step - dr * dr)) / r0  # arc length r * dth uses the rest of the step
+            dth = max(-dth_max, min(dth_max, lag))
+            arm_turn += dth
+            r = r0 + dr
+            out = {"A": r * math.cos(arm_turn), "B": r * math.sin(arm_turn)}
+        r = math.hypot(out["A"], out["B"])
+        return clamp_bend(out, square), arm_turn
+
+    def _jog_target(self, d, dt, rate, square=False):
+        """Jog: move the target at a speed set by the stick deflection (squared, for fine control near the
+        centre), kept at most JOY_LEAD / JOY_LEAD_MM ahead of the arm so it stops when the stick is let go."""
+        j = self.joy
+        sx, sy = j["stick"]
+        m = math.hypot(sx, sy)
+        vx, vy = sx * m, sy * m
+        if j["mode"] == "tip":
+            model = self.model
+            here = model.predict([[d["A"], d["B"]]])[0, [0, 2]]
+            if j.get("tgt_xz") is None:
+                j["tgt_xz"] = here
+            txz = j["tgt_xz"] + np.array([vx, vy]) * rate * model.mm_per_bend * dt
+            lead = txz - here
+            n = float(np.linalg.norm(lead))
+            if n > JOY_LEAD_MM:
+                txz = here + lead * JOY_LEAD_MM / n
+            dd, pred, _ = model.inverse(*txz)  # also keeps the target inside the reachable area
+            j["tgt_xz"] = pred
+            return {"A": float(dd[0]), "B": float(dd[1])}
+        tgt = j.get("tgt_d") or dict(d)
+        tgt = {"A": tgt["A"] + vx * rate * dt, "B": tgt["B"] + vy * rate * dt}
+        lead = math.hypot(tgt["A"] - d["A"], tgt["B"] - d["B"])
+        if lead > JOY_LEAD:
+            tgt = {p: d[p] + (tgt[p] - d[p]) * JOY_LEAD / lead for p in PAIRS}
+        return clamp_bend(tgt, square)
+
+    def _joy_loop(self):
+        """Follow the stick: bend values move toward the stick target at the speed limit, a pair crossing the
+        centre releases its cable before the opposite one pulls, and a force limit becomes a wall."""
+        j = self.joy
+        try:
+            self._prepare()
+            d = self.pose()
+            taut, relief = 0.0, {}  # motor-pair mode: taut-and-pay-out blend (ramped in) and tension relief
+            goals = self.targets_abs(d)
+            seen = collections.deque(maxlen=40)  # (time, measured absolute angles)
+            arm_turn = math.atan2(d["B"], d["A"])  # unwrapped bend direction of the arm
+            last = time.monotonic()
+            while True:
+                now = time.monotonic()
+                dt, last = min(0.1, now - last), now
+                speed = self.ctl.settings["profile_velocity"] * motors.VELOCITY_UNIT_RPM * 6
+                max_pull = max(math.degrees(self.max_pull_rad(i)) for i in motors.IDS)
+                rate = SPEED_MARGIN * speed / max_pull  # bend units per second the arm can follow
+                jog = j.get("control") == "rate"
+                square = j.get("mode") == "bend"  # motor pairs: no combined limit, each pair up to its full pull
+                live = j["enable"] and j.get("stick") is not None and now - j["t"] < JOY_STALE_S \
+                    and (jog or j.get("set") is not None)
+                if jog:
+                    target = self._jog_target(d, dt, rate, square) if live else dict(d)
+                    if not live:
+                        j["tgt_xz"] = None
+                else:
+                    target = dict(j["set"]) if live else dict(d)
+                walls = j["walls"]
+                clamped = False
+                for p in PAIRS:
+                    sign = 1 if target[p] > 0 else -1 if target[p] < 0 else 0
+                    wall = walls.get((p, sign))
+                    if wall is not None:
+                        if abs(target[p]) < wall["limit"] - JOY_WALL_CLEAR or now - wall["t"] > JOY_WALL_RETRY_S:
+                            del walls[(p, sign)]
+                        elif abs(target[p]) > wall["limit"]:
+                            target[p] = sign * wall["limit"]
+                            clamped = True
+                for key in [k for k, w in walls.items() if now - w["t"] > JOY_WALL_RETRY_S]:
+                    del walls[key]
+                if clamped and jog and j.get("mode") == "tip" and self.model is not None:
+                    # keep the jog target at the wall too, so easing off takes effect straight away
+                    j["tgt_xz"] = self.model.predict([[target["A"], target["B"]]])[0, [0, 2]]
+                j["tgt_d"] = dict(target)
+                step = rate * JOY_TICK_S
+                stick_turn, straight = None, True
+                if live and not jog and not square and j.get("turn") is not None:  # square: edges are straight
+                    a = math.atan2(target["B"], target["A"])  # after walls
+                    stick_turn = j["turn"] + (a - j["turn"] + math.pi) % (2 * math.pi) - math.pi
+                    straight = j.get("flick", False)
+                    if straight and abs(stick_turn - arm_turn) < math.radians(30):
+                        j["flick"] = straight = False  # flick finished: back to following the direction
+                nxt, arm_turn = self._joy_step(d, target, step, arm_turn, stick_turn, straight, square)
+                for p, (pos, neg) in PAIRS.items():
+                    if d[p] * nxt[p] < 0:
+                        nxt[p] = 0.0  # release this cable fully before the opposite one pulls
+                    elif d[p] == 0 and nxt[p] != 0:  # taut mode: only a short wait, it just has to reach taut
+                        releasing = neg if nxt[p] > 0 else pos
+                        rel = motors.to_angle(self.ctl.state[releasing]["pulse"]) \
+                            - self.ctl.settings["motors"][releasing]["zero_rad"]
+                        if rel > math.radians(0.5):
+                            nxt[p] = 0.0  # opposite cable not released yet
+                    if abs(nxt[p]) < 1e-9:
+                        nxt[p] = 0.0
+                d = nxt
+                if live:  # cables are only tightened while the trigger / on-screen stick is held
+                    want_taut = 1.0 if j.get("mode") == "bend" else 0.0
+                    taut += max(-dt / TAUT_RAMP_S, min(dt / TAUT_RAMP_S, want_taut - taut))
+                prev, goals = goals, self.targets_abs(d, taut, relief)
+                for i, g in goals.items():
+                    self._goal(i, g)
+                pulling = {i for i in motors.IDS if goals[i] > prev[i] + 1e-9}
+                try:
+                    st = self._check(soft=True, pulling=pulling)
+                except ForceLimit as lim:
+                    back = next((a for t, a in reversed(seen) if now - t >= JOY_BACKOFF_S), None)
+                    if back is not None:
+                        for i, g in back.items():
+                            self._goal(i, g)
+                        d, goals = self.pose(back), dict(back)
+                    p = next(p for p, pair in PAIRS.items() if lim.motor in pair)
+                    walls[(p, 1 if lim.motor == PAIRS[p][0] else -1)] = {"limit": abs(d[p]), "t": now, "motor": lim.motor}
+                    if jog:
+                        j["tgt_d"], j["tgt_xz"] = dict(d), None  # restart the jog target from the backed-off pose
+                    time.sleep(JOY_TICK_S)
+                    continue
+                if taut > 0:  # tension guard: a paying-out (non-pulling) cable that goes tight gets more slack
+                    for p, (pos, neg) in PAIRS.items():
+                        for m in ((neg,) if d[p] > 0 else (pos,) if d[p] < 0 else (pos, neg)):
+                            if abs(st[m]["current_raw"]) * MA_PER_UNIT > PAYOUT_GUARD_MA:
+                                avail = self.ctl.settings["motors"][m]["zero_rad"] - REST_ABS_RAD
+                                relief[m] = min(avail, relief.get(m, 0.0) + PAYOUT_RELIEF_STEP)
+                    j["relief_deg"] = {m: round(math.degrees(r), 1) for m, r in relief.items() if r > 0}
+                j["taut"] = taut
+                seen.append((now, {i: motors.to_angle(st[i]["pulse"]) for i in motors.IDS}))
+                j["cmd"] = dict(d)
+                fresh = j.get("stick") is not None and now - j["t"] < JOY_STALE_S
+                j["message"] = ("moving" if live else "holding (trigger released)" if fresh
+                                else "holding (no stick input)") + (" · cables taut" if taut >= 1 else "")
+                if walls:
+                    w = max(walls.values(), key=lambda w: w["t"])
+                    j["message"] = (f"force limit on motor {w['motor']}: ease off, or keep pushing to retry in "
+                                    f"{max(0.0, JOY_WALL_RETRY_S - (now - w['t'])):.1f} s")
+                time.sleep(JOY_TICK_S)
+        except Stopped:
+            j["message"] = "stopped"
+            self._hold()
+        except Fail as e:
+            j["message"] = f"{e}; released motors to rest"
+            self._release_all()
+        except Exception as e:  # e.g. lost connection
+            j["message"] = str(e)
+
     def snapshot(self):
         model = self.model
         out = {"model": model is not None, "status": self.status, "busy": self.busy}
+        j = self.joy
+        out["joy"] = {"active": j.get("active", False), "message": j.get("message", ""),
+                      "enable": j.get("enable", False), "cmd": j.get("cmd"),
+                      "walls": [w["motor"] for w in j.get("walls", {}).values()]}
+        tgt = j.get("tgt_d") if j.get("control") == "rate" else j.get("set")
+        if model is not None and j.get("active") and tgt:
+            out["joy"]["target_xz"] = model.predict([[tgt["A"], tgt["B"]]])[0, [0, 2]].tolist()
         feed = self.latest_feed()
         out["feed"] = feed if feed and feed["age_s"] <= 2.0 else None
         if model is not None and self.ctl.bus and all(self.ctl.state.get(i) for i in motors.IDS) \

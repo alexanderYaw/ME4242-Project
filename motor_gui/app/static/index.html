@@ -80,6 +80,12 @@
   .tip-status { font-size: 13px; min-height: 2.8em; }
   .tip-status b { text-transform: capitalize; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
+  .joy-box { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .joy-box h3 { font-size: 13px; margin: 0; }
+  .joy-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #joyStick { width: 150px; height: 150px; flex: none; touch-action: none; cursor: grab; user-select: none; }
+  #joyStick.dragging { cursor: grabbing; }
+  .chip.on { color: #fff; background: var(--ok); }
   .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 </style>
 </head>
@@ -113,7 +119,8 @@
       <canvas id="tipTop"></canvas>
       <div class="legend"><span><i style="background:var(--ok)"></i>tip (camera)</span>
         <span><i style="border:2px solid var(--muted);width:6px;height:6px"></i>tip (model, from motor angles)</span>
-        <span><i style="background:var(--danger)"></i>target</span><span>shaded: reachable area</span></div>
+        <span><i style="background:var(--danger)"></i>target</span>
+        <span><i style="border:2px solid var(--warn);width:6px;height:6px"></i>gamepad target</span><span>shaded: reachable area</span></div>
     </div>
     <div class="view">
       <span class="view-title">Side view (bending plane)</span>
@@ -138,6 +145,31 @@
         <div><span>Height y</span><span id="tipY">—</span></div>
         <div><span>Bend dA / dB</span><span id="tipPose">—</span></div>
       </div>
+      <div class="joy-box">
+        <div class="joy-row"><h3>Joystick</h3><span class="chip" id="joyPad">on-screen stick (no gamepad)</span>
+          <span class="chip" id="joyEnable">released</span></div>
+        <div class="joy-row">
+          <canvas id="joyStick"></canvas>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label>Stick moves <select id="joyMode"><option value="tip">the tip (top-view direction)</option>
+              <option value="bend">the motor pairs (x = 0/2, y = 1/3)</option></select></label>
+            <label>Stick control <select id="joyControl"><option value="rate">jog: deflection = speed</option>
+              <option value="position">position: deflection = where to go</option></select></label>
+            <span><label><input type="checkbox" id="joyInvX"> invert x</label>
+              <label><input type="checkbox" id="joyInvY"> invert y</label></span>
+          </div>
+        </div>
+        <div class="joy-row">
+          <button class="primary" id="joyStart">Start joystick control</button>
+          <button id="joyStop">Stop</button>
+        </div>
+        <div class="tip-status" id="joyStatus" style="min-height:1.4em"></div>
+        <span class="hint" style="padding:0"><b>Jog</b> (default): push to keep the target moving that way, faster the
+          further you push; let go and it stays put, the next push continues from there.
+          <b>Position</b>: the stick points at a spot (full deflection = edge of reach). <b>On-screen:</b> drag the stick with the mouse or a finger; let go to hold.
+          <b>Gamepad:</b> left stick steers, hold <b>RT / R2</b> (or RB / R1) to move, <b>B / Circle</b> = torque off all
+          (press any gamepad button first so the browser sees it). Moves follow the same pair rules and current limits.</span>
+      </div>
       <p class="hint" style="padding:0;margin:0">Needs a fitted model (<code>fit_tip_model.py</code>) and, for closed loop,
         the camera feed (<code>~/emio-venv/bin/python tip_feed.py</code>). Moves follow the pair rules
         (one cable of each opposing pair pulls at a time). Stop / Esc / TORQUE OFF ALL interrupt a move.</p>
@@ -153,7 +185,7 @@
 <template id="card-tpl">
   <section class="card">
     <div class="card-head">
-      <h2></h2><span class="chip model"></span><span class="chip moving" hidden>moving</span>
+      <h2></h2><span class="chip model"></span><span class="chip moving" style="visibility:hidden">moving</span>
       <span class="chip uncal" hidden title="Angles are relative to emioapi's zero (pulse 2048) until calibrated">uncalibrated</span>
       <span class="chip err" hidden></span>
       <span class="chip err override" hidden title="This motor's goal was changed by another program on the motor bus, e.g. an Emio Labs / SOFA scene with Robot connection on. Close it.">overridden by another program</span>
@@ -267,7 +299,7 @@ function render(s) {
     const { el } = cards[i], c = cards[i];
     el.classList.toggle("offline", !m.online);
     $(".model", el).textContent = m.online ? (m.model || "") : (s.connected ? "no response" : "offline");
-    $(".moving", el).hidden = !m.moving;
+    $(".moving", el).style.visibility = m.moving ? "visible" : "hidden";  // keep its space: no layout jumps
     $(".override", el).hidden = !m.overridden;
     const err = $(".err", el); err.hidden = !m.hw_error; err.textContent = m.hw_error ? `HW error ${m.hw_error}: ${hwText(m.hw_error)}` : "";
     $(".reboot", el).hidden = !m.hw_error;
@@ -373,9 +405,13 @@ function drawTop(t) {
   const [bx, , bz] = tipModel.base;                   // arm attachment, seen from above
   g.strokeStyle = muted; g.beginPath(); g.moveTo(v.px(bx) - 6, v.py(bz)); g.lineTo(v.px(bx) + 6, v.py(bz));
   g.moveTo(v.px(bx), v.py(bz) - 6); g.lineTo(v.px(bx), v.py(bz) + 6); g.stroke();
-  const target = t.status.target || tipTarget;
+  const target = t.joy && t.joy.active ? null : (t.status.target || tipTarget);
   const meas = t.feed && t.feed.markers ? [t.feed.x, t.feed.z] : null;
   if (target && meas) { g.setLineDash([4, 4]); g.strokeStyle = muted; g.beginPath(); g.moveTo(v.px(meas[0]), v.py(meas[1])); g.lineTo(v.px(target[0]), v.py(target[1])); g.stroke(); g.setLineDash([]); }
+  if (t.joy && t.joy.active && t.joy.target_xz) {
+    const [x, y] = [v.px(t.joy.target_xz[0]), v.py(t.joy.target_xz[1])];
+    dot(g, x, y, 8, null, cssVar("--warn")); dot(g, x, y, 2, cssVar("--warn"));
+  }
   if (t.predicted) dot(g, v.px(t.predicted[0]), v.py(t.predicted[2]), 6, null, muted);
   if (meas) dot(g, v.px(meas[0]), v.py(meas[1]), 6, cssVar("--ok"));
   if (target) {
@@ -445,6 +481,87 @@ $("#tipTop").addEventListener("click", e => {
   if ($("#tipClick").checked && !(state && state.tip && state.tip.busy)) tipGoto();
 });
 setInterval(() => { if (state && state.tip && state.tip.model) loadTipModel(); }, 15000);  // pick up refits
+
+// ---------------- Gamepad ----------------
+const JOY_DEADZONE = 0.12;
+let joyPending = false, joyPrevB = false, joyLast = { x: 0, y: 0, enable: false };
+
+function readStick() {
+  const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  const gp = pads[0];
+  if (!gp) return null;
+  let x = gp.axes[0] || 0, y = -(gp.axes[1] || 0);            // stick up = +y
+  const m = Math.hypot(x, y);
+  if (m < JOY_DEADZONE) { x = 0; y = 0; }
+  else { const k = Math.min(1, (m - JOY_DEADZONE) / (1 - JOY_DEADZONE)) / m; x *= k; y *= k; }
+  if ($("#joyInvX").checked) x = -x;
+  if ($("#joyInvY").checked) y = -y;
+  const b = gp.buttons;
+  const enable = !!((b[7] && b[7].value > 0.15) || (b[5] && b[5].pressed));  // a light squeeze on RT is enough
+  const bPressed = !!(b[1] && b[1].pressed);
+  if (bPressed && !joyPrevB) api("/api/torque_off_all", {}).catch(() => {});
+  joyPrevB = bPressed;
+  return { id: gp.id, x, y, enable };
+}
+
+// On-screen stick: dragging is the dead-man switch; letting go recentres it and the arm holds.
+const vStick = { active: false, x: 0, y: 0 };
+(() => {
+  const cv = $("#joyStick");
+  let r = null;  // stick position measured once per drag, so a page reflow can't jerk the deflection
+  const update = e => {
+    const rad = r.width / 2 - 4;
+    let x = (e.clientX - r.left - r.width / 2) / rad, y = -(e.clientY - r.top - r.height / 2) / rad;
+    const m = Math.hypot(x, y);
+    if (m > 1) { x /= m; y /= m; }
+    vStick.x = x; vStick.y = y;
+  };
+  const release = () => { vStick.active = false; vStick.x = 0; vStick.y = 0; cv.classList.remove("dragging"); };
+  cv.addEventListener("pointerdown", e => {
+    r = cv.getBoundingClientRect(); cv.setPointerCapture(e.pointerId); vStick.active = true; cv.classList.add("dragging"); update(e);
+  });
+  cv.addEventListener("pointermove", e => { if (vStick.active) update(e); });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => cv.addEventListener(t, release));
+  window.addEventListener("blur", release);
+})();
+
+function drawStick(x, y, enable) {
+  const { g, w, h } = setupCanvas($("#joyStick")), r = w / 2 - 4;
+  g.strokeStyle = cssVar("--line"); g.lineWidth = 2; g.beginPath(); g.arc(w / 2, h / 2, r, 0, 2 * Math.PI); g.stroke();
+  g.beginPath(); g.moveTo(w / 2 - r, h / 2); g.lineTo(w / 2 + r, h / 2); g.moveTo(w / 2, h / 2 - r); g.lineTo(w / 2, h / 2 + r); g.stroke();
+  dot(g, w / 2 + x * r, h / 2 - y * r, 16, enable ? cssVar("--ok") : cssVar("--muted"));
+}
+
+function joyTick() {
+  const pad = readStick(), j = state && state.tip && state.tip.joy;
+  const active = !!(j && j.active);
+  // the on-screen stick takes over while it is being dragged; otherwise the gamepad (if any)
+  const st = vStick.active ? { x: vStick.x, y: vStick.y, enable: true } : pad || { x: 0, y: 0, enable: false };
+  $("#joyPad").textContent = pad ? `gamepad: ${pad.id.replace(/\s*\(.*$/, "").slice(0, 32)} + on-screen stick` : "on-screen stick (no gamepad)";
+  const en = $("#joyEnable"); en.textContent = st.enable ? (vStick.active ? "dragging: moving" : "trigger held: moving") : "released";
+  en.classList.toggle("on", !!(st && st.enable && active));
+  drawStick(st ? st.x : 0, st ? st.y : 0, !!(st && st.enable));
+  $("#joyStart").disabled = active || !(state && state.connected) || (state.tip && state.tip.busy);
+  $("#joyStop").disabled = !active;
+  $("#joyMode").disabled = active;
+  $("#joyControl").disabled = active;
+  $("#joyStatus").textContent = j ? (active ? j.message : j.message ? `off (${j.message})` : "off") : "";
+  $("#joyStatus").style.color = active && j.walls && j.walls.length ? "var(--warn)" : "";
+  if (active && st && !joyPending) {
+    joyPending = true;
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 300);  // never let one slow request freeze the stick
+    fetch("/api/tip/joy", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+      body: JSON.stringify({ mode: $("#joyMode").value, control: $("#joyControl").value, x: st.x, y: st.y, enable: st.enable }) })
+      .then(r => { if (!r.ok) return r.json().then(d => showError(d.detail || r.statusText)); })
+      .catch(() => {}).finally(() => { clearTimeout(timer); joyPending = false; });
+  }
+}
+$("#joyStart").addEventListener("click", () => {
+  if ($("#joyMode").value === "tip" && !tipModel) return showError("The top-view mapping needs a tip model; choose the motor-pair mapping");
+  api("/api/tip/joy/start", {}).then(() => showError("")).catch(() => {});
+});
+$("#joyStop").addEventListener("click", () => api("/api/tip/stop", {}).catch(() => {}));
+setInterval(joyTick, 50);
 
 loadPorts();
 connectWs();

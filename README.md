@@ -106,10 +106,34 @@ calibrated camera frame, shows the tip live from above and the arm's bend from t
    the model, then corrects from the camera until the tip is within 3 mm (friction makes the model alone
    about ±9 mm). Targets outside the reachable area go to the nearest reachable point.
 
+**Joystick:** press **Start joystick control** in the panel, then either drag the **on-screen stick** with
+the mouse or a finger (let go to hold; it recentres), or use a USB **gamepad** (Xbox / PlayStation style; press
+any button on it first so the browser sees it): the left stick steers, hold **RT / R2** (or RB / R1) to move and
+let go to hold, **B / Circle** = torque off all. The on-screen stick takes over while it is being dragged.
+**Stick control:** *jog* (default) — the stick sets how fast the target moves (squared response, so small
+pushes are fine adjustments); let go and it stays where it is, the next push continues from there. *Position* —
+the stick points at a spot (full deflection = edge of reach / full bend); letting go holds where the arm is.
+**Motor-pair mode is a direct mapping with no combined limit:** stick x drives motors 0/2 and y drives 1/3,
+each pair independently up to its motor's full pull (soft max). The stick's round range is stretched onto a square,
+so a full diagonal pulls both neighbouring motors fully. Per-motor soft limits, the 1000 mA force wall, the
+1100 mA cut-off and the motors' own overload protection still apply. (Tip mode keeps the combined circle limit,
+which is what its model covers.)
+**Motor-pair mode keeps the cables taut:** on the first trigger press all four cables are wound in to their taut
+zero (so at the centre all four motors are active, just taut). When a pair bends, one motor winds in and its
+opposite unwinds by the same angle at the same time, down to slack, so crossing the centre is continuous (no
+slack to take up). Opposite motors never both pull. If a paying-out motor's current rises above 300 mA (its
+cable going tight), it unwinds further by itself. Tip mode, Move tip and data collection keep the original
+behaviour (the non-pulling cable rests slack), which is what the tip model was fitted with. "Stick moves the tip" maps the stick to a direction in the
+top view (full deflection = edge of the reachable area, needs the model); "the motor pairs" maps x to motors
+0/2 and y to motors 1/3. The arm follows the stick at the speed limit and holds if the trigger is released,
+the tab is hidden or the gamepad disconnects. A force limit acts as a wall until you ease the stick back.
+
 Moves follow the pair rules (motors 0/2 and 1/3 oppose; only one of each pair pulls; a cable is released
 before its opposite pulls), back off above 1000 mA and release everything above 1100 mA. **Stop**, `Esc` or
 **TORQUE OFF ALL** interrupt a move; manual motor commands are refused while it moves.
-API: `POST /api/tip/goto {"x":40,"z":-30,"closed_loop":true}`, `POST /api/tip/stop`; the feed posts to `POST /api/tip`.
+API: `POST /api/tip/goto {"x":40,"z":-30,"closed_loop":true}`, `POST /api/tip/move_bend {"A":0.5,"B":0}`,
+`POST /api/tip/joy/start`, `POST /api/tip/joy {"mode":"tip","x":0,"y":1,"enable":true}`, `POST /api/tip/stop`;
+the camera feed posts to `POST /api/tip`.
 
 ## Notes
 
