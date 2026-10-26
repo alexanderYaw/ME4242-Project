@@ -25,6 +25,7 @@ import csv
 import json
 import math
 import random
+import re
 import shutil
 import sys
 import time
@@ -40,6 +41,8 @@ REST_ABS_RAD = 0.0                    # where a released motor rests (absolute a
 MA_PER_UNIT = 2.69                    # XM430 current unit
 MAX_ERROR_DEG = 8.0                   # settled further than this from the goal = blocked
 MOVE_TIMEOUT_S = 90                   # longest a single move may take before the run aborts
+MAX_REBOOT_TEMP_C = 60                # don't reboot a tripped motor until it has cooled below this
+DEFAULT_SPEED = 45                    # motor speed during a run (GUI units, x0.229 rpm): slower = lower peaks
 CALIB_FILE = Path.home() / ".config" / "emioapi" / "camera_2d_points.csv"
 GUI_SETTINGS = Path(__file__).resolve().parent / "motor_gui" / "data" / "settings.json"
 
@@ -103,7 +106,8 @@ def check_motors(s, max_ma, soft_ma=None):
             raise Abort(f"Motor {m['id']} hardware error {m['hw_error']}")
         if m.get("overridden"):
             raise Abort(f"Motor {m['id']} goal overridden by another program (Emio Labs?)")
-        ma = abs(m["current_raw"]) * MA_PER_UNIT
+        # sustained current (lowest of the last ~0.15 s), so a single brief spike doesn't count
+        ma = m.get("current_sustained_raw", abs(m["current_raw"])) * MA_PER_UNIT
         if ma > max_ma:
             raise Abort(f"Motor {m['id']} current {ma:.0f} mA > {max_ma} mA")
         if soft_ma is not None and ma > soft_ma:
@@ -149,6 +153,44 @@ def release_all(gui):
             gui.goal_abs(m, REST_ABS_RAD)
         except Abort:
             pass
+
+
+HW_ERRORS = {1: "input voltage", 4: "overheating", 8: "encoder", 16: "electrical shock", 32: "overload"}
+
+
+def recover_tripped(gui, max_ma, cooldown_s):
+    """If a motor has tripped its own protection (hardware error), release the others, let it cool down, reboot
+    it and release its cable. Returns the recovered motor ids, or [] if no motor has a hardware error.
+    Overheating or any non-overload fault is not recovered automatically."""
+    s = gui.state()
+    bad = {m["id"]: m["hw_error"] for m in s["motors"] if m.get("hw_error")}
+    if not bad:
+        return []
+    names = ", ".join(f"motor {i}: {HW_ERRORS.get(e, f'error {e}')}" for i, e in bad.items())
+    if any(e != 32 for e in bad.values()):
+        raise Abort(f"{names}; only overload trips are recovered automatically")
+    release_all(gui)
+    print(f"  ! {names}. Released the other motors; cooling down {cooldown_s:.0f} s before rebooting it.")
+    t0 = time.time()
+    while True:
+        time.sleep(max(0.0, cooldown_s - (time.time() - t0)) if time.time() - t0 < cooldown_s else 5)
+        hot = [m["id"] for m in gui.state()["motors"] if m["id"] in bad and (m.get("temp_c") or 0) >= MAX_REBOOT_TEMP_C]
+        if not hot:
+            break
+        if time.time() - t0 > cooldown_s + 120:
+            raise Abort(f"motor(s) {hot} still at or above {MAX_REBOOT_TEMP_C} °C after cooling; stopping")
+        print(f"  ! motor(s) {hot} still warm (>= {MAX_REBOOT_TEMP_C} °C); waiting")
+    for i in bad:
+        gui._req(f"motor/{i}/reboot", {}, timeout=10)  # clears the error; comes back with torque off
+        time.sleep(0.5)
+        gui.torque(i, True)                             # hold where it is ...
+        gui.goal_abs(i, REST_ABS_RAD)                   # ... then release its cable
+    wait_settled(gui, max_ma)
+    still = [m["id"] for m in gui.state()["motors"] if m.get("hw_error")]
+    if still:
+        raise Abort(f"motor(s) {still} still report a hardware error after reboot; stopping")
+    print(f"  ! motor(s) {list(bad)} rebooted and released; continuing from rest")
+    return list(bad)
 
 
 # ---------------------------------------------------------------- camera
@@ -211,8 +253,15 @@ def main():
     ap.add_argument("--frames", type=int, default=10, help="camera frames averaged per sample")
     ap.add_argument("--settle", type=float, default=0.8, help="extra wait after motors stop (s)")
     ap.add_argument("--max-current-ma", type=float, default=1100, help="abort above this motor current (default 1100)")
+    ap.add_argument("--speed", type=int, default=DEFAULT_SPEED,
+                    help=f"motor speed for the run (GUI speed units, x0.229 rpm; default {DEFAULT_SPEED} = "
+                         f"{DEFAULT_SPEED * 0.229:.1f} rpm). Slower = lower current peaks. Your GUI speed is restored after.")
     ap.add_argument("--soft-current-ma", type=float, default=1000,
                     help="above this, back off and log the sample as force-limited instead of aborting (default 1000)")
+    ap.add_argument("--max-recoveries", type=int, default=3,
+                    help="motor overload trips / current cut-offs to recover from automatically (skip the sample "
+                         "and continue) before stopping")
+    ap.add_argument("--cooldown", type=float, default=20.0, help="seconds to let a tripped motor rest before rebooting it")
     ap.add_argument("--max-error-deg", type=float, default=MAX_ERROR_DEG,
                     help="abort if a motor settles further than this from its goal (default 8)")
     ap.add_argument("--out", default=None, help="output CSV (default data/tip_<time>.csv)")
@@ -237,10 +286,11 @@ def main():
             desc = "  ".join(f"m{m}: {'%+6.1f° rel' % math.degrees(r) if kd == 'rel' else '  rest    '}"
                              for m, (kd, r) in sorted(t.items()))
             print(f"{k:3d} {phase:7s} dA={d['A']:+.2f} dB={d['B']:+.2f}  {desc}")
-        print(f"{len(plan)} samples (~{len(plan) * 3 / 60:.0f} min)")
+        print(f"{len(plan)} samples (~{len(plan) * (1.8 + 120 / args.speed) / 60:.0f} min at speed {args.speed})")
         return
 
     gui = Gui(args.api)
+    restore_speed = None  # GUI speed to put back when the run ends, however it ends
     cam = None
     moving = False  # only release the motors on errors once this script has started driving them
     try:
@@ -271,6 +321,11 @@ def main():
                 shutil.copy(src, out.with_name(out.stem + suffix))
 
         moving = True
+        old_speed = gui.state()["profile_velocity"]
+        if args.speed != old_speed:
+            gui._req("speed", {"profile_velocity": args.speed})
+            restore_speed = old_speed
+            print(f"Speed set to {args.speed} ({args.speed * 0.229:.1f} rpm) for the run; {old_speed} is restored after")
         for m in range(4):
             gui.torque(m, True)  # holds the current position
         cur = {"A": 0.0, "B": 0.0}
@@ -287,13 +342,45 @@ def main():
         with open(out, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(cols)
-            n_limited = 0
+            n_limited, recoveries = 0, 0
             for k, (phase, d) in enumerate(plan):
-                cur, lim = move(gui, cur, d, args.max_current_ma, args.soft_current_ma)
+                try:  # a motor can trip its protection while moving, settling or holding for the camera
+                    cur, lim = move(gui, cur, d, args.max_current_ma, args.soft_current_ma)
+                    time.sleep(args.settle)
+                    tip, std, n, seen = measure_tip(cam, args.frames, prev_tip)
+                    s = wait_settled(gui, args.max_current_ma)
+                except Abort as e:
+                    if recoveries >= args.max_recoveries:
+                        raise Abort(f"{e} (already recovered from {recoveries} motor trips / cut-offs this run)") \
+                            from None
+                    tripped, reason = recover_tripped(gui, args.max_current_ma, args.cooldown), "overload"
+                    # current cut-off, reported by the GUI ("motor 1 current ...") or this script ("Motor 1 current ...")
+                    cutoff = re.search(r"motor (\d+) current \d+ mA >", str(e), re.IGNORECASE)
+                    if not tripped and cutoff:
+                        # current cut-off: release everything (the GUI may already have), settle and carry on
+                        tripped, reason = [int(cutoff.group(1))], "cut-off"
+                        release_all(gui)
+                        time.sleep(1.0)  # let the released cables slacken (and the current readings catch up)
+                        wait_settled(gui, args.max_current_ma)
+                        print(f"  ! motor {tripped[0]} hit the {args.max_current_ma:.0f} mA cut-off; all released, continuing from rest")
+                    if not tripped:
+                        raise
+                    recoveries += 1
+                    s = gui.state()
+                    cur = {"A": 0.0, "B": 0.0}
+                    row = [f"{time.time():.3f}", k, phase, "0.0000", "0.0000", f"{d['A']:.4f}", f"{d['B']:.4f}",
+                           ";".join(map(str, tripped)), reason]
+                    for m in s["motors"]:
+                        row += [f"{math.degrees(REST_ABS_RAD - m['settings']['zero_rad']):.3f}",
+                                f"{math.degrees(m['angle_rel_rad']):.3f}", f"{math.degrees(m['angle_rad']):.3f}",
+                                m["pulse"], f"{m['current_raw'] * MA_PER_UNIT:.0f}"]
+                    row += ["", "", "", "", 0, 0]
+                    w.writerow(row)
+                    f.flush()
+                    print(f"[{k + 1}/{len(plan)}] {phase} dA={d['A']:+.2f} dB={d['B']:+.2f} -> SKIPPED "
+                          f"(motor {tripped} {reason}, recovery {recoveries}/{args.max_recoveries})")
+                    continue
                 n_limited += lim is not None
-                time.sleep(args.settle)
-                tip, std, n, seen = measure_tip(cam, args.frames, prev_tip)
-                s = wait_settled(gui, args.max_current_ma)
                 tgt = pair_targets(cur)
                 row = [f"{time.time():.3f}", k, phase, f"{cur['A']:.4f}", f"{cur['B']:.4f}", f"{d['A']:.4f}", f"{d['B']:.4f}",
                        lim.motor if lim else "", f"{lim.ma:.0f}" if lim else ""]
@@ -313,7 +400,7 @@ def main():
                 print(f"[{k + 1}/{len(plan)}] {phase} dA={d['A']:+.2f} dB={d['B']:+.2f} -> {limited}"
                       + (f"tip ({tip[0]:.1f}, {tip[1]:.1f}, {tip[2]:.1f}) ±{std:.1f} mm" if tip else "tip NOT SEEN"))
             move(gui, cur, {"A": 0.0, "B": 0.0}, args.max_current_ma)
-        print(f"Done: {out}  ({n_limited} force-limited samples)")
+        print(f"Done: {out}  ({n_limited} force-limited samples, {recoveries} motor trips / cut-offs recovered)")
     except KeyboardInterrupt:
         print("\nInterrupted" + (": releasing motors to rest" if moving else ""))
         if moving:
@@ -329,6 +416,12 @@ def main():
             release_all(gui)
         raise
     finally:
+        if restore_speed is not None:
+            try:
+                gui._req("speed", {"profile_velocity": restore_speed})
+                print(f"Speed restored to {restore_speed}")
+            except Abort as e:
+                print(f"Could not restore the GUI speed to {restore_speed}: {e}")
         if cam:
             cam.close()
 

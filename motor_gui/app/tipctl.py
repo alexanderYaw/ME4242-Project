@@ -23,7 +23,8 @@ REST_ABS_RAD = 0.0
 TICK_S = 0.05            # goal update interval while streaming a move
 SPEED_MARGIN = 0.85      # stream at most this fraction of the motors' speed limit
 MIN_SEGMENT_S = 0.4      # shortest streamed move
-BACKOFF_S = 0.4          # on a force limit, go back to where the goals were this long ago
+BACKOFF_S = 0.4          # on a force limit, go back to where the motors were this long ago
+BACKOFF_GRACE_S = 0.5    # ... and give the current this long to drop before the hard limit applies again
 SOFT_MA = 1000           # above this: back off and stop short
 HARD_MA = 1100           # above this: release all motors and abort
 MA_PER_UNIT = 2.69
@@ -67,20 +68,37 @@ class TipModel:
         m = json.loads(Path(path).read_text())
         self.info = m
         self.deg = m["degree"]
-        self.coeffs = {q: np.array(c) for q, c in m["coeffs"].items()}
+        self.form = m.get("type", "quadrant_poly")
+        self.max_bend = None
+        if self.form == "cc":
+            self.cc = m["coeffs"]  # see fit_tip_model.py: constant-curvature arm
+            self.max_bend = m.get("max_bend_rad")
+        elif self.form == "per_motor":
+            self.W = np.array(m["coeffs"])  # see fit_tip_model.py: terms 1, a+, a-, b+, b-, a+^2, a-^2, b+^2, b-^2
+        else:
+            self.coeffs = {q: np.array(c) for q, c in m["coeffs"].items()}
         g = np.linspace(-1, 1, 161)
         A, B = np.meshgrid(g, g)
         D = np.column_stack([A.ravel(), B.ravel()])
-        self.grid_d = D[np.hypot(D[:, 0], D[:, 1]) <= 1 + 1e-9]
+        # workspace: the unit square of bend values (each pair independently up to its full pull), and for the
+        # constant-curvature model only bends below max_bend (beyond it the tip curls back inward)
+        self.grid_d = D if self.max_bend is None else D[self.bend_rad(D) <= self.max_bend]
         self.grid_xz = self.predict(self.grid_d)[:, [0, 2]]
-        t = np.linspace(0, 2 * math.pi, 181)
-        self.outline_xz = self.predict(np.column_stack([np.cos(t), np.sin(t)]))[:, [0, 2]]
+        t = np.linspace(0, 2 * math.pi, 361)
+        circle = np.column_stack([np.cos(t), np.sin(t)])
+        edge = circle / np.max(np.abs(circle), axis=1, keepdims=True)  # same directions, on the square
+        edge = np.array([self.clip(e) for e in edge])
+        self.outline_xz = self.predict(edge)[:, [0, 2]]
         self.rest_xz = self.predict([[0.0, 0.0]])[0, [0, 2]]
+        # direction (deg, from +x toward +z) each motor 0..3 bends the tip; the GUI orients its top view with it
+        moved = self.predict([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]])[:, [0, 2]] - self.rest_xz
+        self.motor_dirs_deg = np.degrees(np.arctan2(moved[:, 1], moved[:, 0]))
         rel = self.outline_xz - self.rest_xz
         order = np.argsort(np.arctan2(rel[:, 1], rel[:, 0]))
         self._reach_ang = np.arctan2(rel[:, 1], rel[:, 0])[order]
         self._reach_r = np.hypot(rel[:, 0], rel[:, 1])[order]
-        self.mm_per_bend = float(np.mean(self._reach_r))  # typical tip travel for a full unit of bend
+        # typical tip travel for a full unit of bend (sets the tip-mode jog speed)
+        self.mm_per_bend = float(np.mean(np.linalg.norm(self.predict(circle)[:, [0, 2]] - self.rest_xz, axis=1)))
 
     def reach_mm(self, angle):
         """Distance from the rest tip to the edge of the reachable area, in direction `angle` (top view)."""
@@ -92,8 +110,48 @@ class TipModel:
         a, b = D[:, 0], D[:, 1]
         return np.column_stack([a ** i * b ** j for i in range(self.deg + 1) for j in range(self.deg + 1 - i)])
 
+    def _cc_bend(self, D):
+        a, b = D[:, 0], D[:, 1]
+        pulls = np.column_stack([np.maximum(a, 0), np.maximum(b, 0), np.maximum(-a, 0), np.maximum(-b, 0)])
+        beta = np.tile(np.array(self.cc["bend0"], dtype=float), (len(D), 1))
+        for i, m in enumerate(self.cc["motors"]):
+            g = m["c1"] * pulls[:, i] + m["c2"] * pulls[:, i] ** 2
+            beta += g[:, None] * np.array([math.cos(m["phi"]), math.sin(m["phi"])])
+        return beta
+
+    def bend_rad(self, D):
+        """Total bend angle of the arc (constant-curvature model only)."""
+        beta = self._cc_bend(np.atleast_2d(np.asarray(D, dtype=float)))
+        return np.hypot(beta[:, 0], beta[:, 1])
+
+    def clip(self, d):
+        """Nearest bend values (along the same direction) inside the workspace."""
+        d = np.clip(np.asarray(d, dtype=float), -1.0, 1.0)
+        if self.max_bend is None or self.bend_rad(d)[0] <= self.max_bend:
+            return d
+        lo, hi = 0.0, 1.0  # bend grows along the ray from the centre: bisect for the limit
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if self.bend_rad(d * mid)[0] <= self.max_bend else (lo, mid)
+        return d * lo
+
     def predict(self, D):
         D = np.atleast_2d(np.asarray(D, dtype=float))
+        if self.form == "cc":
+            beta = self._cc_bend(D)
+            th = np.hypot(beta[:, 0], beta[:, 1])
+            L, (bx, by, bz) = self.cc["length_mm"], self.cc["base"]
+            small = th < 1e-6
+            ths = np.where(small, 1.0, th)
+            h = np.where(small, L * th / 2, L * (1 - np.cos(ths)) / ths)  # horizontal reach
+            v = np.where(small, L, L * np.sin(ths) / ths)                 # depth below the attachment
+            ux, uz = np.where(small, 1.0, beta[:, 0] / ths), np.where(small, 0.0, beta[:, 1] / ths)
+            return np.column_stack([bx + h * ux, by - v, bz + h * uz])
+        if self.form == "per_motor":
+            a, b = D[:, 0], D[:, 1]
+            ap, an, bp, bn = np.maximum(a, 0), np.minimum(a, 0), np.maximum(b, 0), np.minimum(b, 0)
+            X = np.column_stack([np.ones_like(a), ap, an, bp, bn, ap ** 2, an ** 2, bp ** 2, bn ** 2])
+            return X @ self.W
         out = np.zeros((len(D), 3))
         for q, (sa, sb) in QUADRANTS.items():
             m = (D[:, 0] * sa >= -1e-12) & (D[:, 1] * sb >= -1e-12)
@@ -109,31 +167,67 @@ class TipModel:
             J[:, k] = (self.predict(d + e)[0, [0, 2]] - self.predict(d - e)[0, [0, 2]]) / (2 * h)
         return J
 
+    def _edge_normals(self, d):
+        """Outward normals (in bend values) of the workspace edges d is on."""
+        out = []
+        for k in range(2):
+            if abs(d[k]) >= 1 - 1e-6:
+                n = np.zeros(2)
+                n[k] = math.copysign(1.0, d[k])
+                out.append(n)
+        if self.max_bend is not None and self.bend_rad(d)[0] >= self.max_bend - 1e-3:
+            h = 1e-4
+            g = np.array([(self.bend_rad(d + e)[0] - self.bend_rad(d - e)[0]) / (2 * h) for e in np.eye(2) * h])
+            if np.linalg.norm(g) > 1e-9:
+                out.append(g / np.linalg.norm(g))
+        return out
+
+    def step_toward(self, d, err):
+        """Damped Gauss-Newton step in bend values that moves the predicted tip by err (mm, x/z). At the edge of the
+        workspace, directions pointing out through it are dropped and the step is re-solved along the edge, so the
+        tip slides only as far as it gets closer to the target (instead of drifting along the edge)."""
+        J = self.jacobian_xz(d)
+        step = np.linalg.solve(J.T @ J + 1e-3 * np.eye(2), J.T @ err)
+        normals = self._edge_normals(d)
+        if not any(n @ step > 0 for n in normals):
+            return step
+        best, best_gain = np.zeros(2), 0.0
+        for n in normals:  # slide along one edge, if that doesn't push out through another
+            t = np.array([-n[1], n[0]])
+            Jt = J @ t
+            cand = t * (Jt @ err) / (Jt @ Jt + 1e-3)
+            gain = (J @ cand) @ err
+            if gain > best_gain and not any(m @ cand > 1e-12 for m in normals):
+                best, best_gain = cand, gain
+        return best
+
     def inverse(self, x, z):
         """Bend values whose predicted tip is closest to (x, z). Returns (d, predicted xz, distance mm)."""
         t = np.array([x, z])
         d = self.grid_d[np.argmin(np.linalg.norm(self.grid_xz - t, axis=1))].copy()
-        for _ in range(10):  # refine with damped Gauss-Newton, staying inside the unit disk
-            err = t - self.predict(d)[0, [0, 2]]
-            J = self.jacobian_xz(d)
-            step = np.linalg.solve(J.T @ J + 1e-3 * np.eye(2), J.T @ err)
-            d = clip_disk(d + np.clip(step, -0.05, 0.05))
+        for _ in range(10):  # refine with damped Gauss-Newton, staying inside the workspace
+            step = self.step_toward(d, t - self.predict(d)[0, [0, 2]])
+            d = self.clip(d + np.clip(step, -0.05, 0.05))
+        p = self.predict(d)[0, [0, 2]]
+        return d, p, float(np.linalg.norm(p - t))
+
+    def inverse_near(self, x, z, d0, iters=5, max_step=0.02):
+        """Like inverse(), but only searches near d0 (damped Gauss-Newton from d0, each step at most max_step),
+        so the result moves continuously with the target instead of jumping to another solution of the model.
+        At the edge of the reachable area it slides along the boundary. Returns (d, predicted xz, distance mm)."""
+        t = np.array([x, z])
+        d = self.clip(np.array(d0, dtype=float))
+        for _ in range(iters):
+            step = self.step_toward(d, t - self.predict(d)[0, [0, 2]])
+            d = self.clip(d + np.clip(step, -max_step, max_step))
         p = self.predict(d)[0, [0, 2]]
         return d, p, float(np.linalg.norm(p - t))
 
 
-def clamp_bend(d, square=False):
-    """Keep bend values in range: the unit square (each pair independently up to its full pull) or the unit
-    circle (combined limit, used where the tip model applies)."""
-    if square:
-        return {p: max(-1.0, min(1.0, v)) for p, v in d.items()}
-    r = math.hypot(d["A"], d["B"])
-    return {p: v / r for p, v in d.items()} if r > 1 else d
+def clamp_bend(d):
+    """Keep bend values in the unit square: each pair independently up to its full pull."""
+    return {p: max(-1.0, min(1.0, v)) for p, v in d.items()}
 
-
-def clip_disk(d):
-    r = math.hypot(*d)
-    return d / r if r > 1 else d
 
 
 class TipController:
@@ -147,6 +241,7 @@ class TipController:
         self._stop = threading.Event()
         self._motion = threading.Lock()  # one move at a time (tip goto, move_bend or gamepad)
         self.soft_ma, self.hard_ma = SOFT_MA, HARD_MA
+        self._hard_grace_until = 0.0  # after a back-off, the hard limit waits this long for the current to drop
         self.joy = {"active": False, "message": ""}
 
     # -- model / feed -------------------------------------------------------------
@@ -238,13 +333,16 @@ class TipController:
                 raise Fail(f"motor {i} not responding")
             if m["hw_error"]:
                 raise Fail(f"motor {i} hardware error {m['hw_error']}")
-            if not m["torque"]:
+            if m["torque"] is False:  # only a real "off" reading; None = not read this cycle
                 raise Fail(f"motor {i} torque is off")
-            ma = abs(m["current_raw"]) * MA_PER_UNIT
-            if ma > self.hard_ma:
-                raise Fail(f"motor {i} current {ma:.0f} mA > {self.hard_ma:.0f} mA")
+            ma = self.ctl.sustained_raw.get(i, abs(m["current_raw"])) * MA_PER_UNIT  # brief spikes don't count
+            # A pulling motor backs off first, even if a fast rise took it past the hard limit before the
+            # filter confirmed the soft one: backing off is the quickest way to bring its current down. The hard
+            # limit still applies while backing off (soft=False) and to motors that aren't pulling.
             if soft and ma > self.soft_ma and (pulling is None or i in pulling):
                 raise ForceLimit(i, ma)
+            if ma > self.hard_ma and time.monotonic() >= self._hard_grace_until:
+                raise Fail(f"motor {i} current {ma:.0f} mA > {self.hard_ma:.0f} mA")
         return st
 
     def _wait_settled(self, soft=True, timeout=8.0, window=8, pulling=None):
@@ -290,6 +388,7 @@ class TipController:
             return None
         except ForceLimit as lim:
             now = time.monotonic()
+            self._hard_grace_until = now + BACKOFF_GRACE_S
             back = next((a for t, a in reversed(seen) if now - t >= BACKOFF_S), start)
             for i, g in back.items():
                 self._goal(i, g)
@@ -381,6 +480,9 @@ class TipController:
         except Fail as e:
             self._release_all()
             raise RuntimeError(f"{e}; released motors to rest")
+        except RuntimeError as e:  # e.g. a motor that tripped its own protection rejects the command
+            self._release_all()
+            raise RuntimeError(f"{e}; released the other motors to rest")
         finally:
             self.soft_ma, self.hard_ma = SOFT_MA, HARD_MA
             self._motion.release()
@@ -426,12 +528,11 @@ class TipController:
                 if st["error_mm"] <= TOLERANCE_MM:
                     st.update(state="done", message=note + f"reached within {TOLERANCE_MM:.0f} mm")
                     return
-                J = model.jacobian_xz(d)
-                step = np.linalg.solve(J.T @ J + 1e-3 * np.eye(2), J.T @ err)
+                step = model.step_toward(d, err)
                 n = np.linalg.norm(step)
                 if n > MAX_CORRECTION:
                     step *= MAX_CORRECTION / n
-                d_new = clip_disk(d + step)
+                d_new = model.clip(d + step)
                 if np.linalg.norm(d_new - d) < 1e-3:
                     st.update(state="done", message=note + "at the edge of the workspace; can't get closer")
                     return
@@ -503,7 +604,10 @@ class TipController:
                 raise ValueError("Top-view mapping needs a tip model; use the motor-pair mapping")
             ang = math.atan2(y, x)
             target = model.rest_xz + m * model.reach_mm(ang) * np.array([math.cos(ang), math.sin(ang)])
-            d = model.inverse(*target)[0]
+            prev = self.joy.get("set")
+            # near the previous target when there is one, so the target can't jump between model solutions
+            d = model.inverse_near(*target, [prev["A"], prev["B"]], iters=10, max_step=0.05)[0] if prev \
+                else model.inverse(*target)[0]
             want = {"A": float(d[0]), "B": float(d[1])}
         else:
             want = {"A": float(x), "B": float(y)}
@@ -525,7 +629,7 @@ class TipController:
         j.update(set=want, stick=(x, y), mode=mode, control="position", t=time.monotonic(), enable=bool(enable))
 
     @staticmethod
-    def _joy_step(d, target, step, arm_turn, stick_turn, straight, square=False):
+    def _joy_step(d, target, step, arm_turn, stick_turn, straight):
         """One follow step of at most `step` (bend units) from d toward target.
 
         Normally the bend amount and the bend direction are followed separately: the direction rotates the
@@ -534,8 +638,6 @@ class TipController:
         bend instead of cutting across the middle. `straight` (a flick across, or a small bend) goes in a
         straight line. Returns (next d, next arm_turn)."""
         r0, r1 = math.hypot(d["A"], d["B"]), math.hypot(target["A"], target["B"])
-        if not square:
-            r1 = min(1.0, r1)
         if straight or stick_turn is None or r0 < JOY_POLAR_MIN_R or r1 < JOY_POLAR_MIN_R:
             dx, dy = target["A"] - d["A"], target["B"] - d["B"]
             n = math.hypot(dx, dy)
@@ -552,10 +654,9 @@ class TipController:
             arm_turn += dth
             r = r0 + dr
             out = {"A": r * math.cos(arm_turn), "B": r * math.sin(arm_turn)}
-        r = math.hypot(out["A"], out["B"])
-        return clamp_bend(out, square), arm_turn
+        return clamp_bend(out), arm_turn
 
-    def _jog_target(self, d, dt, rate, square=False):
+    def _jog_target(self, d, dt, rate):
         """Jog: move the target at a speed set by the stick deflection (squared, for fine control near the
         centre), kept at most JOY_LEAD / JOY_LEAD_MM ahead of the arm so it stops when the stick is let go."""
         j = self.joy
@@ -572,7 +673,9 @@ class TipController:
             n = float(np.linalg.norm(lead))
             if n > JOY_LEAD_MM:
                 txz = here + lead * JOY_LEAD_MM / n
-            dd, pred, _ = model.inverse(*txz)  # also keeps the target inside the reachable area
+            prev = j.get("tgt_d") or d
+            # search near the last target so the dot slides continuously (no jumps between model solutions)
+            dd, pred, _ = model.inverse_near(*txz, [prev["A"], prev["B"]])
             j["tgt_xz"] = pred
             return {"A": float(dd[0]), "B": float(dd[1])}
         tgt = j.get("tgt_d") or dict(d)
@@ -580,7 +683,7 @@ class TipController:
         lead = math.hypot(tgt["A"] - d["A"], tgt["B"] - d["B"])
         if lead > JOY_LEAD:
             tgt = {p: d[p] + (tgt[p] - d[p]) * JOY_LEAD / lead for p in PAIRS}
-        return clamp_bend(tgt, square)
+        return clamp_bend(tgt)
 
     def _joy_loop(self):
         """Follow the stick: bend values move toward the stick target at the speed limit, a pair crossing the
@@ -601,11 +704,11 @@ class TipController:
                 max_pull = max(math.degrees(self.max_pull_rad(i)) for i in motors.IDS)
                 rate = SPEED_MARGIN * speed / max_pull  # bend units per second the arm can follow
                 jog = j.get("control") == "rate"
-                square = j.get("mode") == "bend"  # motor pairs: no combined limit, each pair up to its full pull
+                square = j.get("mode") == "bend"  # motor pairs: straight-line following, cables kept taut
                 live = j["enable"] and j.get("stick") is not None and now - j["t"] < JOY_STALE_S \
                     and (jog or j.get("set") is not None)
                 if jog:
-                    target = self._jog_target(d, dt, rate, square) if live else dict(d)
+                    target = self._jog_target(d, dt, rate) if live else dict(d)
                     if not live:
                         j["tgt_xz"] = None
                 else:
@@ -629,13 +732,16 @@ class TipController:
                 j["tgt_d"] = dict(target)
                 step = rate * JOY_TICK_S
                 stick_turn, straight = None, True
-                if live and not jog and not square and j.get("turn") is not None:  # square: edges are straight
+                if live and not jog and not square and j.get("turn") is not None:  # motor pairs: straight lines
                     a = math.atan2(target["B"], target["A"])  # after walls
                     stick_turn = j["turn"] + (a - j["turn"] + math.pi) % (2 * math.pi) - math.pi
                     straight = j.get("flick", False)
                     if straight and abs(stick_turn - arm_turn) < math.radians(30):
                         j["flick"] = straight = False  # flick finished: back to following the direction
-                nxt, arm_turn = self._joy_step(d, target, step, arm_turn, stick_turn, straight, square)
+                nxt, arm_turn = self._joy_step(d, target, step, arm_turn, stick_turn, straight)
+                if not square and self.model is not None:  # tip mode: stay inside the model's workspace
+                    c = self.model.clip([nxt["A"], nxt["B"]])
+                    nxt = {"A": float(c[0]), "B": float(c[1])}
                 for p, (pos, neg) in PAIRS.items():
                     if d[p] * nxt[p] < 0:
                         nxt[p] = 0.0  # release this cable fully before the opposite one pulls
@@ -658,6 +764,7 @@ class TipController:
                 try:
                     st = self._check(soft=True, pulling=pulling)
                 except ForceLimit as lim:
+                    self._hard_grace_until = time.monotonic() + BACKOFF_GRACE_S
                     back = next((a for t, a in reversed(seen) if now - t >= JOY_BACKOFF_S), None)
                     if back is not None:
                         for i, g in back.items():
@@ -722,4 +829,4 @@ class TipController:
         i = model.info
         return {"base": i["base"], "length_mm": i["length_mm"], "rest_tip": i["rest_tip"], "samples": i["samples"],
                 "cv_error_mm": i["cv_error_mm"], "n": i["n"], "fitted": i["fitted"],
-                "outline": model.outline_xz.round(1).tolist()}
+                "outline": model.outline_xz.round(1).tolist(), "motor_dirs_deg": model.motor_dirs_deg.round(1).tolist()}

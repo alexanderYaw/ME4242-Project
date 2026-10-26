@@ -96,7 +96,11 @@ calibrated camera frame, shows the tip live from above and the arm's bend from t
 3. Put one green marker on the tip, set `MAX_SAFE_DEG` in `collect_tip_data.py` to each motor's max pull, and
    collect data (GUI running, camera free): `~/emio-venv/bin/python collect_tip_data.py` → `data/tip_<time>.csv`.
 4. Fit the model: `~/emio-venv/bin/python fit_tip_model.py data/tip_<time>.csv` → writes
-   `motor_gui/data/tip_model.json` (the GUI picks up a new fit automatically).
+   `motor_gui/data/tip_model.json` (the GUI picks up a new fit automatically). The default model is physical: the arm
+   bends as a circular arc, each motor adds bend toward its own direction, so reach saturates like the real arm's
+   (two adjacent motors pulled fully reach only a little further out than one; the tip mostly rises). Tip control
+   stays below 120° of bend, where the tip would start curling back. If some cables weren't connected during
+   collection, `--mirror 1,2` estimates those motors from their opposite ones.
 
 **Use:**
 
@@ -109,15 +113,21 @@ calibrated camera frame, shows the tip live from above and the arm's bend from t
 **Joystick:** press **Start joystick control** in the panel, then either drag the **on-screen stick** with
 the mouse or a finger (let go to hold; it recentres), or use a USB **gamepad** (Xbox / PlayStation style; press
 any button on it first so the browser sees it): the left stick steers, hold **RT / R2** (or RB / R1) to move and
-let go to hold, **B / Circle** = torque off all. The on-screen stick takes over while it is being dragged.
+let go to hold, **B / Circle** = torque off all. **Bluetooth** works too: unplug the cable, put the controller in
+pairing mode and run `./pair_controller.sh` once (Linux); afterwards pressing the Xbox button reconnects it. If the
+browser reports a non-standard button layout (the panel then says "hold RB to move"), use **RB** as the dead-man. The on-screen stick takes over while it is being dragged.
 **Stick control:** *jog* (default) — the stick sets how fast the target moves (squared response, so small
 pushes are fine adjustments); let go and it stays where it is, the next push continues from there. *Position* —
 the stick points at a spot (full deflection = edge of reach / full bend); letting go holds where the arm is.
-**Motor-pair mode is a direct mapping with no combined limit:** stick x drives motors 0/2 and y drives 1/3,
-each pair independently up to its motor's full pull (soft max). The stick's round range is stretched onto a square,
-so a full diagonal pulls both neighbouring motors fully. Per-motor soft limits, the 1000 mA force wall, the
-1100 mA cut-off and the motors' own overload protection still apply. (Tip mode keeps the combined circle limit,
-which is what its model covers.)
+**Orientation:** the top view and the stick follow the robot's physical layout: motor 1 top left, motor 0 top right,
+motor 2 bottom left, motor 3 bottom right (`LAYOUT_DEG` in `index.html`). The top view is turned to match using the
+directions the model says each motor bends the tip; small +x / +z arrows show the camera axes for the X / Z boxes.
+**Motor-pair mode is a direct mapping with no combined limit:** push the stick toward a motor to pull it (towards the
+top-right corner = motor 0); straight up, between motors 1 and 0, pulls both. Each pair (0/2, 1/3) goes independently
+up to its motor's full pull (soft max); the stick's round range is stretched so that full deflection straight between
+two motors pulls both fully. Per-motor soft limits, the 1000 mA force wall, the
+1100 mA cut-off and the motors' own overload protection still apply. Tip mode, Move tip and the shaded reachable
+area use the same square range (the tip model is fitted on the square grid), so the tip reaches the corners too.
 **Motor-pair mode keeps the cables taut:** on the first trigger press all four cables are wound in to their taut
 zero (so at the centre all four motors are active, just taut). When a pair bends, one motor winds in and its
 opposite unwinds by the same angle at the same time, down to slack, so crossing the centre is continuous (no

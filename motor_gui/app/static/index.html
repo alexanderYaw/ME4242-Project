@@ -76,6 +76,13 @@
   .view canvas { width: 100%; height: 340px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
   #tipTop { cursor: crosshair; }
   .tip-side { display: flex; flex-direction: column; gap: 10px; }
+  .cam-view { margin-top: 14px; }
+  .cam-box { position: relative; width: 100%; max-width: 720px; aspect-ratio: 4 / 3; background: var(--bg);
+             border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
+  .cam-box img { width: 100%; height: 100%; object-fit: contain; display: none; }
+  .cam-box.live img { display: block; }
+  .cam-box.live .cam-note { display: none; }
+  .cam-note { color: var(--muted); padding: 16px; text-align: center; }
   .tip-side .readouts { grid-template-columns: repeat(2, 1fr); margin: 0; }
   .tip-status { font-size: 13px; min-height: 2.8em; }
   .tip-status b { text-transform: capitalize; }
@@ -152,7 +159,7 @@
           <canvas id="joyStick"></canvas>
           <div style="display:flex;flex-direction:column;gap:4px">
             <label>Stick moves <select id="joyMode"><option value="tip">the tip (top-view direction)</option>
-              <option value="bend">the motor pairs (x = 0/2, y = 1/3)</option></select></label>
+              <option value="bend">the motors (push toward a motor to pull it)</option></select></label>
             <label>Stick control <select id="joyControl"><option value="rate">jog: deflection = speed</option>
               <option value="position">position: deflection = where to go</option></select></label>
             <span><label><input type="checkbox" id="joyInvX"> invert x</label>
@@ -174,6 +181,11 @@
         the camera feed (<code>~/emio-venv/bin/python tip_feed.py</code>). Moves follow the pair rules
         (one cable of each opposing pair pulls at a time). Stop / Esc / TORQUE OFF ALL interrupt a move.</p>
     </div>
+  </div>
+  <div class="view cam-view">
+    <span class="view-title">Camera (live) — tracked marker outlined</span>
+    <div class="cam-box" id="camBox"><img id="camImg" alt="Live camera view">
+      <span class="cam-note" id="camNote">Camera view off: run <code>~/emio-venv/bin/python tip_feed.py</code></span></div>
   </div>
 </section>
 <p class="hint">Torque must be on before a motor will move. Turning torque on holds the current position.
@@ -286,8 +298,12 @@ for (let i = 0; i < 4; i++) {
   cards.push(c);
 }
 
+let uiVersion = null;
 function render(s) {
   state = s;
+  // the GUI was updated: reload to get the new page (not while joystick control is on)
+  if (uiVersion && s.ui_version && s.ui_version !== uiVersion && !(s.tip && s.tip.joy && s.tip.joy.active)) location.reload();
+  uiVersion = uiVersion || s.ui_version;
   renderTip(s);
   $("#dot").classList.toggle("on", s.connected);
   $("#status").textContent = s.connected ? `Connected · ${s.port}${s.mock ? " (simulated)" : ""}` : "Disconnected";
@@ -366,6 +382,26 @@ const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(
 
 async function loadTipModel() {
   try { const r = await fetch("/api/tip/model"); tipModel = r.ok ? await r.json() : null; } catch { tipModel = null; }
+  if (tipModel && tipModel.motor_dirs_deg) setView(tipModel.motor_dirs_deg);
+}
+
+// Physical orientation: the top view and the stick follow the robot's layout, motor 1 top left, motor 0 top right,
+// motor 2 bottom left, motor 3 bottom right. view maps camera (x, z) <-> screen (u right, v up); it is set from the
+// directions the model says each motor bends the tip, so it stays right after a refit or camera recalibration.
+const LAYOUT_DEG = [45, 135, 225, 315];  // screen direction of motors 0..3 (0 = right, counterclockwise)
+let view = { u: (x, z) => x, v: (x, z) => z, x: (u, v) => u, z: (u, v) => v };
+function setView(dirs) {
+  const wrap = a => ((a % 360) + 540) % 360 - 180;
+  const s = Math.sign(wrap(dirs[1] - dirs[0])) * Math.sign(wrap(LAYOUT_DEG[1] - LAYOUT_DEG[0])) || 1;  // -1: mirrored
+  const o = (LAYOUT_DEG[0] - s * dirs[0]) * Math.PI / 180, c = Math.cos(o), n = Math.sin(o);  // screen angle = s * camera angle + o
+  view = s > 0
+    ? { u: (x, z) => c * x - n * z, v: (x, z) => n * x + c * z, x: (u, v) => c * u + n * v, z: (u, v) => -n * u + c * v }
+    : { u: (x, z) => c * x + n * z, v: (x, z) => n * x - c * z, x: (u, v) => c * u + n * v, z: (u, v) => n * u - c * v };
+}
+// motor-pair stick: pushing toward a motor (in the layout) pulls it; straight between two pulls both
+function stickToPairs(x, y) {
+  const r = LAYOUT_DEG.map(a => a * Math.PI / 180);
+  return [x * Math.cos(r[0]) + y * Math.sin(r[0]), x * Math.cos(r[1]) + y * Math.sin(r[1])];  // A (motor 0 / 2), B (1 / 3)
 }
 
 function setupCanvas(cv) {
@@ -392,30 +428,44 @@ function drawTop(t) {
   const cv = $("#tipTop"), { g, w, h } = setupCanvas(cv), muted = cssVar("--muted"), line = cssVar("--line");
   if (!tipModel) { g.fillStyle = muted; g.font = "13px system-ui"; g.fillText("No tip model: run fit_tip_model.py", 16, 24); tipView = null; return; }
   const pts = tipModel.outline.concat(tipModel.samples);
-  const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
-  const v = tipView = fitView(w, h, Math.min(...xs) - 15, Math.max(...xs) + 15, Math.min(...zs) - 15, Math.max(...zs) + 15);
+  const us = pts.map(([x, z]) => view.u(x, z)), vs = pts.map(([x, z]) => view.v(x, z));
+  const v = tipView = fitView(w, h, Math.min(...us) - 15, Math.max(...us) + 15, Math.min(...vs) - 15, Math.max(...vs) + 15);
+  const P = (x, z) => [v.px(view.u(x, z)), v.py(view.v(x, z))];  // camera (x, z) -> canvas pixel
   g.strokeStyle = line; g.lineWidth = 1; g.font = "11px system-ui"; g.fillStyle = muted;
   for (let a = -300; a <= 300; a += 50) {           // 50 mm grid
     g.beginPath(); g.moveTo(v.px(a), 0); g.lineTo(v.px(a), h); g.moveTo(0, v.py(a)); g.lineTo(w, v.py(a)); g.stroke();
   }
-  g.fillText("+x →", w - 40, h - 8); g.fillText("+z ↑", 6, 14); g.fillText("50 mm grid", 6, h - 8);
-  g.beginPath(); tipModel.outline.forEach(([x, z], i) => i ? g.lineTo(v.px(x), v.py(z)) : g.moveTo(v.px(x), v.py(z)));
+  g.font = "600 12px system-ui";                      // motors in the corners, as laid out on the robot
+  LAYOUT_DEG.forEach((a, i) => {
+    const right = Math.cos(a * Math.PI / 180) > 0, top = Math.sin(a * Math.PI / 180) > 0;
+    g.textAlign = right ? "right" : "left";
+    g.fillText(`motor ${i}`, right ? w - 6 : 6, top ? 16 : h - 8);
+  });
+  g.textAlign = "center"; g.font = "11px system-ui"; g.fillText("50 mm grid", w / 2, h - 8);
+  const cx = w / 2, cy = 30;                          // camera axes, for the X / Z boxes
+  [["x", 1, 0], ["z", 0, 1]].forEach(([name, ex, ez]) => {
+    const du = view.u(ex, ez), dv = view.v(ex, ez);
+    g.strokeStyle = muted; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + 14 * du, cy - 14 * dv); g.stroke();
+    g.fillText(`+${name}`, cx + 24 * du, cy - 24 * dv + 4);
+  });
+  g.textAlign = "left";
+  g.beginPath(); tipModel.outline.forEach(([x, z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z)));
   g.closePath(); g.fillStyle = cssVar("--accent") + "22"; g.fill(); g.strokeStyle = cssVar("--accent") + "88"; g.stroke();
-  g.fillStyle = muted + "99"; tipModel.samples.forEach(([x, z]) => g.fillRect(v.px(x) - 1, v.py(z) - 1, 2, 2));
-  const [bx, , bz] = tipModel.base;                   // arm attachment, seen from above
-  g.strokeStyle = muted; g.beginPath(); g.moveTo(v.px(bx) - 6, v.py(bz)); g.lineTo(v.px(bx) + 6, v.py(bz));
-  g.moveTo(v.px(bx), v.py(bz) - 6); g.lineTo(v.px(bx), v.py(bz) + 6); g.stroke();
+  g.fillStyle = muted + "99"; tipModel.samples.forEach(([x, z]) => { const [px, py] = P(x, z); g.fillRect(px - 1, py - 1, 2, 2); });
+  const [bpx, bpy] = P(tipModel.base[0], tipModel.base[2]);  // arm attachment, seen from above
+  g.strokeStyle = muted; g.beginPath(); g.moveTo(bpx - 6, bpy); g.lineTo(bpx + 6, bpy);
+  g.moveTo(bpx, bpy - 6); g.lineTo(bpx, bpy + 6); g.stroke();
   const target = t.joy && t.joy.active ? null : (t.status.target || tipTarget);
   const meas = t.feed && t.feed.markers ? [t.feed.x, t.feed.z] : null;
-  if (target && meas) { g.setLineDash([4, 4]); g.strokeStyle = muted; g.beginPath(); g.moveTo(v.px(meas[0]), v.py(meas[1])); g.lineTo(v.px(target[0]), v.py(target[1])); g.stroke(); g.setLineDash([]); }
+  if (target && meas) { g.setLineDash([4, 4]); g.strokeStyle = muted; g.beginPath(); g.moveTo(...P(...meas)); g.lineTo(...P(...target)); g.stroke(); g.setLineDash([]); }
   if (t.joy && t.joy.active && t.joy.target_xz) {
-    const [x, y] = [v.px(t.joy.target_xz[0]), v.py(t.joy.target_xz[1])];
+    const [x, y] = P(...t.joy.target_xz);
     dot(g, x, y, 8, null, cssVar("--warn")); dot(g, x, y, 2, cssVar("--warn"));
   }
-  if (t.predicted) dot(g, v.px(t.predicted[0]), v.py(t.predicted[2]), 6, null, muted);
-  if (meas) dot(g, v.px(meas[0]), v.py(meas[1]), 6, cssVar("--ok"));
+  if (t.predicted) dot(g, ...P(t.predicted[0], t.predicted[2]), 6, null, muted);
+  if (meas) dot(g, ...P(...meas), 6, cssVar("--ok"));
   if (target) {
-    const [x, y] = [v.px(target[0]), v.py(target[1])], d = cssVar("--danger");
+    const [x, y] = P(...target), d = cssVar("--danger");
     g.strokeStyle = d; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 9, y); g.lineTo(x + 9, y); g.moveTo(x, y - 9); g.lineTo(x, y + 9); g.stroke();
     dot(g, x, y, 3, d);
   }
@@ -446,7 +496,37 @@ function drawSide(t) {
     + `tip ${hh.toFixed(0)} mm out, ${(src[1] - (by - L)).toFixed(0)} mm above the straight-down position` + (t.feed && t.feed.markers ? "" : " (model)");
 }
 
+// live camera view: images from tip_feed.py, fetched one at a time while it is running and the tab is visible
+let camLive = false, camBusy = false, camUrl = null;
+function setCamLive(live) {
+  camLive = live;
+  $("#camBox").classList.toggle("live", live && !!camUrl);
+  if (live && !camBusy && !document.hidden) camLoop();
+}
+async function camLoop() {
+  camBusy = true;
+  const img = $("#camImg");
+  while (camLive && !document.hidden) {
+    const t0 = performance.now();
+    try {
+      const r = await fetch("/api/camera/latest", {cache: "no-store"});
+      if (r.ok) {
+        const url = URL.createObjectURL(await r.blob());
+        await new Promise(res => { img.onload = img.onerror = res; img.src = url; });
+        if (camUrl) URL.revokeObjectURL(camUrl);
+        camUrl = url;
+        if (img.naturalWidth) $("#camBox").style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+        $("#camBox").classList.toggle("live", camLive);
+      }
+    } catch (e) { /* server restarting; retry */ }
+    await new Promise(res => setTimeout(res, Math.max(0, 100 - (performance.now() - t0))));
+  }
+  camBusy = false;
+}
+document.addEventListener("visibilitychange", () => setCamLive(camLive));
+
 function renderTip(s) {
+  setCamLive(!!(s.camera && s.camera.age_s != null && s.camera.age_s < 1.5));
   const t = s.tip; if (!t) return;
   if (t.model && !tipModel) loadTipModel();
   if (!t.model) tipModel = null;
@@ -476,7 +556,7 @@ $("#tipStop").addEventListener("click", () => api("/api/tip/stop", {}).catch(() 
 $("#tipTop").addEventListener("click", e => {
   if (!tipView) return;
   const r = e.target.getBoundingClientRect();
-  const x = tipView.wx(e.clientX - r.left), z = tipView.wy(e.clientY - r.top);
+  const u = tipView.wx(e.clientX - r.left), w = tipView.wy(e.clientY - r.top), x = view.x(u, w), z = view.z(u, w);
   $("#tipX").value = x.toFixed(0); $("#tipZ").value = z.toFixed(0); tipTarget = [x, z];
   if ($("#tipClick").checked && !(state && state.tip && state.tip.busy)) tipGoto();
 });
@@ -496,12 +576,16 @@ function readStick() {
   else { const k = Math.min(1, (m - JOY_DEADZONE) / (1 - JOY_DEADZONE)) / m; x *= k; y *= k; }
   if ($("#joyInvX").checked) x = -x;
   if ($("#joyInvY").checked) y = -y;
-  const b = gp.buttons;
-  const enable = !!((b[7] && b[7].value > 0.15) || (b[5] && b[5].pressed));  // a light squeeze on RT is enough
+  const b = gp.buttons, pressed = i => !!(b[i] && b[i].pressed);
+  // standard layout (USB, or Bluetooth in Chrome): RT = 7, RB = 5; a light squeeze on RT is enough.
+  // Other layouts (e.g. some browsers over Bluetooth): triggers may be axes with unknown rest values, so only
+  // the bumper button is trusted: RB is button 7 (Linux) or 5.
+  const standard = gp.mapping === "standard";
+  const enable = standard ? !!((b[7] && b[7].value > 0.15) || pressed(5)) : pressed(5) || pressed(7);
   const bPressed = !!(b[1] && b[1].pressed);
   if (bPressed && !joyPrevB) api("/api/torque_off_all", {}).catch(() => {});
   joyPrevB = bPressed;
-  return { id: gp.id, x, y, enable };
+  return { id: gp.id, x, y, enable, standard };
 }
 
 // On-screen stick: dragging is the dead-man switch; letting go recentres it and the arm holds.
@@ -529,6 +613,9 @@ function drawStick(x, y, enable) {
   const { g, w, h } = setupCanvas($("#joyStick")), r = w / 2 - 4;
   g.strokeStyle = cssVar("--line"); g.lineWidth = 2; g.beginPath(); g.arc(w / 2, h / 2, r, 0, 2 * Math.PI); g.stroke();
   g.beginPath(); g.moveTo(w / 2 - r, h / 2); g.lineTo(w / 2 + r, h / 2); g.moveTo(w / 2, h / 2 - r); g.lineTo(w / 2, h / 2 + r); g.stroke();
+  g.fillStyle = cssVar("--muted"); g.font = "600 11px system-ui"; g.textAlign = "center";
+  LAYOUT_DEG.forEach((a, i) => g.fillText(i, w / 2 + 0.8 * r * Math.cos(a * Math.PI / 180), h / 2 - 0.8 * r * Math.sin(a * Math.PI / 180) + 4));
+  g.textAlign = "left";
   dot(g, w / 2 + x * r, h / 2 - y * r, 16, enable ? cssVar("--ok") : cssVar("--muted"));
 }
 
@@ -537,7 +624,7 @@ function joyTick() {
   const active = !!(j && j.active);
   // the on-screen stick takes over while it is being dragged; otherwise the gamepad (if any)
   const st = vStick.active ? { x: vStick.x, y: vStick.y, enable: true } : pad || { x: 0, y: 0, enable: false };
-  $("#joyPad").textContent = pad ? `gamepad: ${pad.id.replace(/\s*\(.*$/, "").slice(0, 32)} + on-screen stick` : "on-screen stick (no gamepad)";
+  $("#joyPad").textContent = pad ? `gamepad: ${pad.id.replace(/\s*\(.*$/, "").slice(0, 32)}${pad.standard ? "" : " (hold RB to move)"} + on-screen stick` : "on-screen stick (no gamepad)";
   const en = $("#joyEnable"); en.textContent = st.enable ? (vStick.active ? "dragging: moving" : "trigger held: moving") : "released";
   en.classList.toggle("on", !!(st && st.enable && active));
   drawStick(st ? st.x : 0, st ? st.y : 0, !!(st && st.enable));
@@ -549,9 +636,11 @@ function joyTick() {
   $("#joyStatus").style.color = active && j.walls && j.walls.length ? "var(--warn)" : "";
   if (active && st && !joyPending) {
     joyPending = true;
+    const mode = $("#joyMode").value;  // stick is in screen directions: convert to camera x, z or to the motor pairs
+    const [sx, sy] = mode === "tip" ? [view.x(st.x, st.y), view.z(st.x, st.y)] : stickToPairs(st.x, st.y);
     const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 300);  // never let one slow request freeze the stick
     fetch("/api/tip/joy", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
-      body: JSON.stringify({ mode: $("#joyMode").value, control: $("#joyControl").value, x: st.x, y: st.y, enable: st.enable }) })
+      body: JSON.stringify({ mode, control: $("#joyControl").value, x: sx, y: sy, enable: st.enable }) })
       .then(r => { if (!r.ok) return r.json().then(d => showError(d.detail || r.statusText)); })
       .catch(() => {}).finally(() => { clearTimeout(timer); joyPending = false; });
   }

@@ -1,5 +1,7 @@
 """Localhost GUI for jogging the EMIO's four motors independently, with live encoder readout."""
 import asyncio
+import collections
+import hashlib
 import json
 import math
 import os
@@ -8,8 +10,8 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 import motors
@@ -19,6 +21,7 @@ MOCK = os.environ.get("EMIO_MOCK", "0") == "1"
 DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 SETTINGS_FILE = DATA_DIR / "settings.json"
 POLL_HZ = 20
+CURRENT_FILTER_N = 3  # readings (at POLL_HZ) a current must stay above a limit before it counts: ~0.15 s
 DEFAULT_MOTOR_SETTINGS = {"radius_mm": 20.0, "zero_rad": None, "invert": False, "min_deg": 0.0, "max_deg": 180.0}
 PROFILE_ACCELERATION = 20  # x 214.6 rev/min^2: ~0.2 s ease-in/out at 15 rpm (0 = instant, abrupt)
 DEFAULT_SETTINGS = {"profile_velocity": 30, "motors": [dict(DEFAULT_MOTOR_SETTINGS) for _ in motors.IDS]}
@@ -42,6 +45,11 @@ class Controller:
         self.state = {}
         self.error = None
         self.commanded = {}  # motor id -> (goal pulse we last sent, time sent)
+        # Current limits act on the *sustained* current: the lowest of the last CURRENT_FILTER_N readings
+        # (20 Hz), so a single brief spike can't trip them.
+        self.current_hist = {i: collections.deque(maxlen=CURRENT_FILTER_N) for i in motors.IDS}
+        self.sustained_raw = {}
+        self.read_glitches = {i: 0 for i in motors.IDS}  # dropped register reads per motor (diagnostics)
         self.swap_lock = threading.Lock()
         self.settings = load_settings()
         threading.Thread(target=self._poll, daemon=True).start()
@@ -88,7 +96,22 @@ class Controller:
             bus = self.bus
             if bus:
                 try:
-                    self.state = bus.read_state()
+                    state = bus.read_state()
+                    prev = self.state
+                    for i, m in state.items():
+                        if m is None:
+                            continue
+                        # A dropped/garbled reply for one register block leaves those fields None: keep the
+                        # last good value for this cycle instead of reporting e.g. "torque off" by mistake.
+                        missing = [k for k, v in m.items() if v is None]
+                        if missing:
+                            self.read_glitches[i] += 1
+                            if prev.get(i):
+                                for k in missing:
+                                    m[k] = prev[i].get(k)
+                        self.current_hist[i].append(abs(m["current_raw"]))
+                    self.sustained_raw = {i: min(h) for i, h in self.current_hist.items() if h}
+                    self.state = state
                 except Exception as e:
                     self.error = f"Lost connection: {e}"
                     self.disconnect()
@@ -144,6 +167,8 @@ class Controller:
                              velocity_rpm=m["velocity_raw"] * motors.VELOCITY_UNIT_RPM)
                 cmd = self.commanded.get(i)
                 # Our last goal was replaced by someone else on the bus (e.g. an Emio Labs scene).
+                entry["current_sustained_raw"] = self.sustained_raw.get(i, abs(m["current_raw"]))
+                entry["read_glitches"] = self.read_glitches[i]
                 entry["overridden"] = bool(m["torque"] and cmd and time.monotonic() - cmd[1] > 0.5
                                            and m["goal_pulse"] is not None and abs(m["goal_pulse"] - cmd[0]) > 1)
                 if entry["calibrated"]:
@@ -155,11 +180,15 @@ class Controller:
 ctl = Controller()
 tip = tipctl.TipController(ctl, DATA_DIR / "tip_model.json")
 STATIC = Path(__file__).parent / "static"
+UI_VERSION = hashlib.sha1((STATIC / "index.html").read_bytes()).hexdigest()[:12]  # open pages reload when it changes
+camera = {"jpeg": None, "t": 0.0}  # latest live-view image from tip_feed.py
 
 
 def full_snapshot():
     s = ctl.snapshot()
     s["tip"] = tip.snapshot()
+    s["camera"] = {"age_s": time.monotonic() - camera["t"] if camera["jpeg"] else None}
+    s["ui_version"] = UI_VERSION
     return s
 
 
@@ -178,7 +207,7 @@ app = FastAPI(title="EMIO motor GUI", lifespan=lifespan)
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})  # always pick up GUI updates
 
 
 @app.get("/api/state")
@@ -381,6 +410,23 @@ def tip_feed(req: TipFeedReq):
         raise HTTPException(422, "x, y, z required when a marker is seen")
     tip.add_feed(req.model_dump())
     return {"ok": True}
+
+
+@app.post("/api/camera/frame")
+async def camera_frame(request: Request):
+    """Camera image (JPEG body) from tip_feed.py, for the live view."""
+    body = await request.body()
+    if not body.startswith(b"\xff\xd8"):
+        raise HTTPException(415, "expected a JPEG image")
+    camera.update(jpeg=body, t=time.monotonic())
+    return {"ok": True}
+
+
+@app.get("/api/camera/latest")
+def camera_latest():
+    if camera["jpeg"] is None:
+        raise HTTPException(404, "No camera image; run tip_feed.py")
+    return Response(camera["jpeg"], media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/tip/model")
