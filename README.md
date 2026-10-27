@@ -18,8 +18,8 @@ Localhost web GUI to drive the EMIO's four Dynamixel motors independently, with 
 ### 2. Get the code
 
 ```bash
-git clone https://github.com/<you>/<repo-name>.git
-cd <repo-name>
+git clone https://github.com/alexanderYaw/ME4242-Project.git
+cd ME4242-Project
 ```
 
 ### 3. Connect the robot
@@ -33,7 +33,8 @@ overrides the motors, and only one program can use the motor port at a time.
 - **Windows:** double-click `motor_gui\run.bat` (or run it from a terminal in the `motor_gui` folder)
 
 The first run creates `.venv` and installs the dependencies (needs internet, takes about a minute); later
-runs start in a couple of seconds. Keep the terminal open while using the GUI; Ctrl+C stops it.
+runs start in a couple of seconds. Keep the terminal open while using the GUI; Ctrl+C stops it. Only one GUI can
+use port 8000: if the Docker version below is running, stop it first (`docker compose down`) or use `PORT=8001`.
 
 ### 5. Open http://localhost:8000
 
@@ -73,34 +74,56 @@ python3 -m venv .venv
 cd app && ../.venv/bin/python -m uvicorn server:app --host 127.0.0.1 --port 8000
 ```
 
-<details><summary>Docker (Linux only; the container needs the USB serial device)</summary>
+### Docker (Linux only, instead of the scripts)
+
+The container gets the USB serial device from the host and keeps running in the background. Run these from the
+`motor_gui` folder:
 
 ```bash
-docker compose up -d --build          # -> http://localhost:8000
+cd motor_gui
+docker compose up -d --build          # build and start -> http://localhost:8000
 EMIO_MOCK=1 docker compose up -d      # simulated motors
+docker compose logs -f                # server output
 docker compose down                   # stop
 ```
-</details>
+
+The code is copied into the image, so after changing anything in `motor_gui/app/` run
+`docker compose up -d --build` again (rebuilding never moves the motors). Settings, the tip model and the obstacle
+are kept in `motor_gui/data/`, which is mounted into the container.
 
 ## Tip control (cable-driven arm)
 
 The **Tip control** panel (below the motor cards) moves the arm tip to a target position (x, z) in the
 calibrated camera frame, shows the tip live from above and the arm's bend from the side.
 
-**Setup, once per robot** (scripts in the repo root use the EMIO Python, `~/emio-venv/bin/python`):
+**EMIO Python, once per machine.** The scripts in the repo root (camera feed, calibration, data collection,
+fitting) use the camera through `emioapi` and run from a separate venv, `~/emio-venv`:
+
+```bash
+python3 -m venv ~/emio-venv
+~/emio-venv/bin/pip install emioapi==0.2.0     # also installs numpy, opencv-python, pyrealsense2
+```
+
+(Windows: `py -3 -m venv %USERPROFILE%\emio-venv`, then use `%USERPROFILE%\emio-venv\Scripts\python` wherever
+this README says `~/emio-venv/bin/python`.) Run the scripts from the repo root.
+
+**Setup, once per robot:**
 
 1. In the GUI, set each motor's taut zero (**Calibrate: set 0 here** where the cable just goes taut) and its
    max pull (Settings → Soft max, absolute degrees).
 2. Calibrate the camera with the ArUco plate: `~/emio-venv/bin/python -m emioapi calibrate`, then check it
    with `~/emio-venv/bin/python check_camera_calibration.py` (2–4 mm error expected).
-3. Put one green marker on the tip, set `MAX_SAFE_DEG` in `collect_tip_data.py` to each motor's max pull, and
-   collect data (GUI running, camera free): `~/emio-venv/bin/python collect_tip_data.py` → `data/tip_<time>.csv`.
+3. Put one green marker on the tip and collect data (GUI running and connected, camera free, so `tip_feed.py`
+   stopped): `~/emio-venv/bin/python collect_tip_data.py` → `data/tip_<time>.csv`. Each motor's max pull is read
+   from its soft max in the GUI (step 1).
 4. Fit the model: `~/emio-venv/bin/python fit_tip_model.py data/tip_<time>.csv` → writes
    `motor_gui/data/tip_model.json` (the GUI picks up a new fit automatically). The default model is physical: the arm
    bends as a circular arc, each motor adds bend toward its own direction, so reach saturates like the real arm's
    (two adjacent motors pulled fully reach only a little further out than one; the tip mostly rises). Tip control
    stays below 120° of bend, where the tip would start curling back. If some cables weren't connected during
-   collection, `--mirror 1,2` estimates those motors from their opposite ones.
+   collection, `--mirror 1,2` estimates those motors from their opposite ones. `motor_gui/data/` is not in git, so
+   a fresh clone has no tip model: tip control (Move tip, tip-mode joystick, obstacle planning) needs this fit
+   first; the motor cards and motor-pair joystick work without it.
 
 **Use:**
 
