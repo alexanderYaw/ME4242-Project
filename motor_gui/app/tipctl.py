@@ -47,6 +47,11 @@ PAYOUT_RELIEF_STEP = math.radians(1.0)  # ... this much per tick
 TAUT_RAMP_S = 0.5        # taut mode: cables are tightened to taut over this long, while the trigger is held
 JOY_LEAD = 0.1           # jog: how far the target may run ahead of the arm (bend units) ...
 JOY_LEAD_MM = 15.0       # ... or, in tip mode, in mm; so the arm stops where it is when you let go
+ARC_POINTS = 16          # points along the arm checked against the obstacle
+PLAN_STEP = 0.025        # obstacle planner: grid of bend values
+CHECK_STEP = 0.01        # ... path segments are checked this often (bend units)
+NEAR_PENALTY = 20.0      # ... extra cost for moving inside the clearance margin (times the missing fraction)
+CLEARANCE_MM = 20.0      # default: the arm's centreline stays this far from the rod's surface
 
 
 class Stopped(Exception):
@@ -55,6 +60,10 @@ class Stopped(Exception):
 
 class Fail(Exception):
     pass
+
+
+class NoPath(Exception):
+    """The obstacle planner found no clear path (nothing has moved)."""
 
 
 class ForceLimit(Exception):
@@ -159,6 +168,28 @@ class TipModel:
                 out[m] = self._features(D[m]) @ self.coeffs[q]
         return out
 
+    @property
+    def has_shape(self):
+        return self.form == "cc"
+
+    def backbone(self, D, n=ARC_POINTS):
+        """Points along the arm (constant-curvature model) from just below the attachment to the tip,
+        shape (len(D), n, 3)."""
+        D = np.atleast_2d(np.asarray(D, dtype=float))
+        beta = self._cc_bend(D)
+        th = np.hypot(beta[:, 0], beta[:, 1])
+        L, base = self.cc["length_mm"], np.array(self.cc["base"], dtype=float)
+        s = np.arange(1, n + 1) / n                   # fraction of the arm's length
+        a = th[:, None] * s                           # bend reached at each point
+        small = a < 1e-6
+        a_ = np.where(small, 1.0, a)
+        h = np.where(small, L * s * a / 2, L * s * (1 - np.cos(a_)) / a_)
+        v = np.where(small, L * s, L * s * np.sin(a_) / a_)
+        straight = th < 1e-6
+        ux = np.where(straight, 1.0, beta[:, 0] / np.where(straight, 1.0, th))[:, None]
+        uz = np.where(straight, 0.0, beta[:, 1] / np.where(straight, 1.0, th))[:, None]
+        return np.stack([base[0] + h * ux, base[1] - v,base[2] + h * uz], axis=-1)
+
     def jacobian_xz(self, d, h=0.02):
         J = np.zeros((2, 2))
         for k in range(2):
@@ -229,6 +260,200 @@ def clamp_bend(d):
     return {p: max(-1.0, min(1.0, v)) for p, v in d.items()}
 
 
+def rod_clearance(P, rod):
+    """Distance (mm) from points P (..., 3) to the surface of the rod (a segment p0-p1 with a radius)."""
+    a, b = np.asarray(rod["p0"], dtype=float), np.asarray(rod["p1"], dtype=float)
+    ab = b - a
+    t = np.clip((P - a) @ ab / (ab @ ab), 0.0, 1.0)
+    return np.linalg.norm(P - (a + t[..., None] * ab), axis=-1) - rod["radius"]
+
+
+def arc_through_tip(base, tip, n=ARC_POINTS):
+    """The arm's shape from the measured tip alone: the constant-curvature arc that leaves the attachment straight
+    down and ends at the tip (bend = 2 * atan(horizontal / vertical offset)). Points (n, 3), as backbone()."""
+    base, tip = np.asarray(base, dtype=float), np.asarray(tip, dtype=float)
+    hz = tip[[0, 2]] - base[[0, 2]]
+    h, v = float(np.linalg.norm(hz)), base[1] - tip[1]
+    s = np.arange(1, n + 1) / n
+    if h < 1e-3:
+        return base + np.outer(s, [0.0, -v, 0.0])
+    th, R = 2 * math.atan2(h, v), (h * h + v * v) / (2 * h)
+    u = hz / h
+    hh, vv = R * (1 - np.cos(th * s)), R * np.sin(th * s)
+    return np.column_stack([base[0] + hh * u[0], base[1] - vv, base[2] + hh * u[1]])
+
+
+def split_at_axes(start, path):
+    """Insert the points where a straight path crosses dA = 0 or dB = 0, so every piece stays in one quadrant:
+    there a pair's pulling cable is fully released before the opposite one pulls (the pair rule), and motor
+    angles change linearly with the bend values."""
+    out, prev = [], np.asarray(start, dtype=float)
+    for p in path:
+        p = np.asarray(p, dtype=float)
+        cross = sorted((prev[k] / (prev[k] - p[k]), k) for k in range(2) if prev[k] * p[k] < 0)
+        for t, k in cross:
+            q = prev + t * (p - prev)
+            q[k] = 0.0
+            out.append(q)
+        out.append(p)
+        prev = p
+    return out
+
+
+class Planner:
+    """Paths in bend values that keep the arm (constant-curvature model: the whole arc, not just the tip) clear of
+    the rod.
+
+    Every point of a bend-value grid over the full motor range gets the arm's clearance from the rod (so a path
+    may curl the arm past the tip-mode bend limit, e.g. to lift it over the rod). A path is the cheapest grid route
+    (Dijkstra, 8-connected), then shortened wherever a straight line is no worse. Inside the clearance margin
+    moves cost extra, and an arm that starts inside it may not get any closer, so it first backs away."""
+
+    def __init__(self, model, rod, need):
+        self.model, self.rod, self.need = model, rod, float(need)
+        self.g = np.linspace(-1, 1, int(round(2 / PLAN_STEP)) + 1)
+        n = len(self.g)
+        A, B = np.meshgrid(self.g, self.g, indexing="ij")
+        self.D = np.stack([A, B], axis=-1)
+        self.clear = self.clearance(self.D.reshape(-1, 2)).reshape(n, n)
+
+    def clearance(self, D):
+        return np.min(rod_clearance(self.model.backbone(np.atleast_2d(D)), self.rod), axis=1)
+
+    def weight(self, c, floor):
+        """Cost per bend unit at clearance c; infinite closer than floor."""
+        c = np.asarray(c, dtype=float)
+        w = 1 + NEAR_PENALTY * np.clip((self.need - c) / self.need, 0, None)
+        return np.where(c < floor, np.inf, w)
+
+    def seg_cost(self, a, b, floor):
+        a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+        length = float(np.linalg.norm(b - a))
+        if length < 1e-9:
+            return 0.0
+        k = max(1, math.ceil(length / CHECK_STEP))
+        w = self.weight(self.clearance(a + np.outer(np.arange(k + 1) / k, b - a)), floor)
+        return length * float(np.mean((w[1:] + w[:-1]) / 2))
+
+    def nearest_clear(self, d):
+        """Grid point with a clear arm whose tip is closest (top view) to the tip at d."""
+        ok = self.clear >= self.need
+        if not ok.any():
+            return None
+        D = self.D[ok]
+        tips = self.model.predict(D)[:, [0, 2]]
+        return D[np.argmin(np.linalg.norm(tips - self.model.predict(d)[0, [0, 2]], axis=1))]
+
+    def plan(self, d0, d1):
+        """Waypoints (bend values, excluding d0) to d1 or, if the arm would be too close to the rod there, to the
+        clear point with the nearest tip. Returns (waypoints, goal used, note); raises NoPath if there is no way."""
+        d0, d1 = np.asarray(d0, dtype=float), np.asarray(d1, dtype=float)
+        c0 = float(self.clearance(d0)[0])
+        floor = min(self.need, c0 - 1.0)
+        note = ""
+        if float(self.clearance(d1)[0]) < self.need:
+            alt = self.nearest_clear(d1)
+            if alt is None:
+                raise NoPath(f"the arm can't get {self.need:.0f} mm clear of the obstacle anywhere")
+            d1 = alt
+            note = "target too close to the obstacle; going to the nearest clear point. "
+        if self.seg_cost(d0, d1, floor) <= np.linalg.norm(d1 - d0) * (1 + 1e-6):
+            return [d1], d1, note  # straight there, clear all the way
+        route = self._dijkstra(d0, d1, floor)
+        if route is None:
+            gap = self._widest_gap(d0, d1)
+            raise NoPath(f"no path keeps the arm {self.need:.0f} mm clear of the obstacle" + (
+                f"; the widest way passes {gap:.0f} mm from it (lower the clearance to below that to allow it)"
+                if gap > 0 else "; every way touches it"))
+        pts = self._shorten([d0] + route + [d1], floor)
+        if len(pts) > 2:
+            note += f"going around the obstacle ({len(pts) - 2} waypoints). "
+        return pts[1:], d1, note
+
+    def _corners(self, d):
+        """The grid points around d."""
+        n = len(self.g)
+        f = (np.asarray(d) + 1) / PLAN_STEP
+        lo = np.clip(np.floor(f).astype(int), 0, n - 1)
+        return {(min(lo[0] + i, n - 1), min(lo[1] + j, n - 1)) for i in (0, 1) for j in (0, 1)}
+
+    def _dijkstra(self, d0, d1, floor):
+        import heapq
+        n = len(self.g)
+        W = self.weight(self.clear, floor)
+        dist, prev, heap = {}, {}, []
+        for c in self._corners(d0):
+            cost = self.seg_cost(d0, self.D[c], floor)
+            if np.isfinite(cost) and cost < dist.get(c, np.inf):
+                dist[c], prev[c] = cost, None
+                heapq.heappush(heap, (cost, c))
+        goals = {c: self.seg_cost(self.D[c], d1, floor) for c in self._corners(d1)}
+        best, best_node = np.inf, None
+        done = set()
+        while heap:
+            du, u = heapq.heappop(heap)
+            if u in done or du > dist.get(u, np.inf):
+                continue
+            if du >= best:
+                break
+            done.add(u)
+            if u in goals and du + goals[u] < best:
+                best, best_node = du + goals[u], u
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    v = (u[0] + di, u[1] + dj)
+                    if (di or dj) and 0 <= v[0] < n and 0 <= v[1] < n and np.isfinite(W[v]):
+                        nd = du + PLAN_STEP * math.hypot(di, dj) * (W[u] + W[v]) / 2
+                        if nd < dist.get(v, np.inf):
+                            dist[v], prev[v] = nd, u
+                            heapq.heappush(heap, (nd, v))
+        if best_node is None:
+            return None
+        route, u = [], best_node
+        while u is not None:
+            route.append(self.D[u])
+            u = prev[u]
+        return route[::-1]
+
+    def _widest_gap(self, d0, d1):
+        """Largest clearance a grid path from d0 to d1 can keep all the way (widest-path search)."""
+        import heapq
+        n = len(self.g)
+        best, heap = {}, []
+        for c in self._corners(d0):
+            best[c] = float(self.clear[c])
+            heapq.heappush(heap, (-best[c], c))
+        goals = self._corners(d1)
+        while heap:
+            w, u = heapq.heappop(heap)
+            if -w < best.get(u, -np.inf):
+                continue
+            if u in goals:
+                return -w
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    v = (u[0] + di, u[1] + dj)
+                    if (di or dj) and 0 <= v[0] < n and 0 <= v[1] < n:
+                        nw = min(-w, float(self.clear[v]))
+                        if nw > best.get(v, -np.inf):
+                            best[v] = nw
+                            heapq.heappush(heap, (-nw, v))
+        return -np.inf
+
+    def _shorten(self, pts, floor):
+        """Replace runs of waypoints by a straight line wherever that costs no more."""
+        step = [self.seg_cost(a, b, floor) for a, b in zip(pts, pts[1:])]
+        cum = np.concatenate([[0.0], np.cumsum(step)])
+        out, i = [pts[0]], 0
+        while i < len(pts) - 1:
+            j = len(pts) - 1
+            while j > i + 1 and self.seg_cost(pts[i], pts[j], floor) > (cum[j] - cum[i]) * 1.02 + 1e-9:
+                j -= 1
+            out.append(pts[j])
+            i = j
+        return out
+
+
 
 class TipController:
     def __init__(self, ctl, model_path):
@@ -243,6 +468,18 @@ class TipController:
         self.soft_ma, self.hard_ma = SOFT_MA, HARD_MA
         self._hard_grace_until = 0.0  # after a back-off, the hard limit waits this long for the current to drop
         self.joy = {"active": False, "message": ""}
+        # obstacle (rod) from tip_feed.py, and the avoidance settings; kept in obstacle.json next to the model
+        self.obstacle_path = self.model_path.parent / "obstacle.json"
+        self.obs = {"avoid": True, "clearance_mm": CLEARANCE_MM, "hsv": None, "rod": None, "rod_t": None,
+                    "source": None}
+        try:
+            self.obs.update(json.loads(self.obstacle_path.read_text()))
+        except (OSError, ValueError):
+            pass
+        self.obs_version = 0
+        self.obs_feed = {"t": None, "seen": False, "pick": None, "mark": None, "reset": False, "error": ""}
+        self._planner = (None, None)
+        self.plan_xz = None  # predicted tip along the current planned path, for the GUI
 
     # -- model / feed -------------------------------------------------------------
     @property
@@ -273,6 +510,111 @@ class TipController:
         if not pts:
             return None
         return np.array([np.mean([p[k] for p in pts]) for k in ("x", "y", "z")])
+
+    # -- obstacle -------------------------------------------------------------------
+    def _save_obs(self):
+        try:
+            self.obstacle_path.write_text(json.dumps(self.obs, indent=1))
+        except OSError:
+            pass
+
+    def _set_rod(self, rod, source):
+        old = self.obs["rod"]
+        rod = {"p0": [float(v) for v in rod["p0"]], "p1": [float(v) for v in rod["p1"]],
+               "radius": float(rod["radius"]), **{k: rod[k] for k in ("open", "visible_mm") if k in rod}}
+        moved = old is None or self.obs["source"] != source or abs(old["radius"] - rod["radius"]) > 1.0 or \
+            max(np.linalg.norm(np.subtract(old[k], rod[k])) for k in ("p0", "p1")) > 2.0
+        self.obs.update(rod_t=time.time(), source=source)
+        if moved:  # small jitter doesn't re-plan or redraw
+            self.obs["rod"] = rod
+            self.obs_version += 1
+            self._save_obs()
+
+    def obstacle_feed(self, rod=None, seen=False, hsv_picked=None, marked=None, error=None):
+        """Update from tip_feed.py (a few times per second). Returns what the feed needs: the rod colour, a
+        pending colour pick or end marking (image fractions), and whether to forget its tracked rod."""
+        f = self.obs_feed
+        f.update(t=time.monotonic(), seen=bool(seen))
+        if error:
+            f.update(error=error, pick=None, mark=None)
+        if hsv_picked:
+            self.obs["hsv"] = hsv_picked
+            f.update(pick=None, error="", reset=True)
+            self.obs["source"] = None  # a picked colour takes over from marked ends
+            self._save_obs()
+        elif marked:
+            f.update(mark=None, error="")
+            self._set_rod(marked, "marked")
+        elif rod and self.obs["source"] != "marked":
+            self._set_rod(rod, "colour")
+        out = {"hsv": self.obs["hsv"], "pick": f["pick"], "mark": f["mark"], "reset": f["reset"]}
+        f["reset"] = False
+        return out
+
+    def obstacle_pick(self, u, v):
+        self.obs_feed.update(pick=[u, v], mark=None, error="")
+
+    def obstacle_mark(self, points, radius):
+        self.obs_feed.update(mark={"points": points, "radius": radius}, pick=None, error="")
+
+    def obstacle_clear(self):
+        self.obs.update(rod=None, rod_t=None, source=None)
+        self.obs_feed.update(reset=True, pick=None, mark=None, error="")
+        self.obs_version += 1
+        self._save_obs()
+
+    def obstacle_settings(self, avoid=None, clearance_mm=None):
+        if avoid is not None:
+            self.obs["avoid"] = bool(avoid)
+        if clearance_mm is not None:
+            self.obs["clearance_mm"] = float(clearance_mm)
+            self.obs_version += 1
+        self._save_obs()
+
+    def planner(self):
+        """Obstacle planner for the current rod and clearance, or None (no rod, avoidance off, or a model without
+        the arm's shape)."""
+        model = self.model
+        if not self.obs["avoid"] or self.obs["rod"] is None or model is None or not model.has_shape:
+            return None
+        key = (self._model_mtime, self.obs_version)
+        if self._planner[0] != key:
+            self._planner = (key, Planner(model, self.obs["rod"], self.obs["clearance_mm"]))
+        return self._planner[1]
+
+    def obstacle_map(self):
+        """For the GUI: the rod and the tip positions (inside the tip-mode workspace) where the arm would be closer
+        to it than the clearance (near) or touch it (hit)."""
+        p = self.planner()
+        out = {"version": self.obs_version, "rod": self.obs["rod"], "near": [], "hit": []}
+        if p is None:
+            return out
+        D, c = p.D[::2, ::2].reshape(-1, 2), p.clear[::2, ::2].ravel()
+        model = self.model
+        inside = model.bend_rad(D) <= model.max_bend if model.max_bend is not None else np.ones(len(D), bool)
+        xz = model.predict(D)[:, [0, 2]].round(1)
+        out["near"] = xz[inside & (c >= 0) & (c < p.need)].tolist()
+        out["hit"] = xz[inside & (c < 0)].tolist()
+        out["step_mm"] = round(2 * PLAN_STEP * model.mm_per_bend, 1)
+        return out
+
+    def _obstacle_snapshot(self, d):
+        o, f = self.obs, self.obs_feed
+        out = {"rod": o["rod"], "source": o["source"], "avoid": o["avoid"], "clearance_mm": o["clearance_mm"],
+               "version": self.obs_version, "hsv_set": o["hsv"] is not None,
+               "rod_age_s": time.time() - o["rod_t"] if o["rod_t"] else None,
+               "feed": f["t"] is not None and time.monotonic() - f["t"] < 2.0, "seen": f["seen"],
+               "picking": f["pick"] is not None, "marking": f["mark"] is not None, "error": f["error"],
+               "plan_xz": self.plan_xz}
+        model = self.model
+        if o["rod"] is not None and model is not None and model.has_shape:
+            if d is not None:
+                out["clear_model_mm"] = float(np.min(rod_clearance(model.backbone([[d["A"], d["B"]]])[0], o["rod"])))
+            feed = self.latest_feed()
+            if feed and feed["age_s"] < FEED_MAX_AGE_S and feed.get("markers"):
+                arc = arc_through_tip(model.cc["base"], [feed["x"], feed["y"], feed["z"]])
+                out["clear_camera_mm"] = float(np.min(rod_clearance(arc, o["rod"])))
+        return out
 
     # -- pose ---------------------------------------------------------------------
     def max_pull_rad(self, i):
@@ -368,17 +710,26 @@ class TipController:
         then wait for the arm to stop. Speed follows the GUI's speed setting. If a pulling motor passes the
         soft current limit, back off to where the motors actually were BACKOFF_S earlier and return the
         ForceLimit; otherwise return None."""
+        return self._stream_path([start, end])
+
+    def _stream_path(self, pts):
+        """Like _stream, through a list of absolute-angle waypoints in one smooth move (no stops between them)."""
         speed = self.ctl.settings["profile_velocity"] * motors.VELOCITY_UNIT_RPM * 6  # deg/s
-        span = max(abs(math.degrees(end[i] - start[i])) for i in motors.IDS)
-        duration = max(MIN_SEGMENT_S, 1.5 * span / (SPEED_MARGIN * speed))  # smoothstep peaks at 1.5x mean
-        pulling = {i for i in motors.IDS if end[i] > start[i] + math.radians(0.5)}
+        spans = [max(abs(math.degrees(b[i] - a[i])) for i in motors.IDS) for a, b in zip(pts, pts[1:])]
+        cum = np.concatenate([[0.0], np.cumsum(spans)])
+        duration = max(MIN_SEGMENT_S, 1.5 * cum[-1] / (SPEED_MARGIN * speed))  # smoothstep peaks at 1.5x mean
+        pull = [{i for i in motors.IDS if b[i] > a[i] + math.radians(0.5)} for a, b in zip(pts, pts[1:])]
+        start = pts[0]
         seen, t0 = [], time.monotonic()  # (time, measured absolute angles)
         try:
             while True:
                 u = min(1.0, (time.monotonic() - t0) / duration)
-                k = u * u * (3 - 2 * u)
+                s = u * u * (3 - 2 * u) * cum[-1]
+                n = min(len(spans) - 1, int(np.searchsorted(cum, s, side="right")) - 1)
+                k = (s - cum[n]) / spans[n] if spans[n] > 0 else 1.0
+                a, b, pulling = pts[n], pts[n + 1], pull[n]
                 for i in motors.IDS:
-                    self._goal(i, start[i] + (end[i] - start[i]) * k)
+                    self._goal(i, a[i] + (b[i] - a[i]) * k)
                 st = self._check(soft=True, pulling=pulling)
                 seen.append((time.monotonic(), {i: motors.to_angle(st[i]["pulse"]) for i in motors.IDS}))
                 if u >= 1:
@@ -410,6 +761,24 @@ class TipController:
                 return self.pose(), lim
             start = end
         return dict(tgt), None
+
+    def _go(self, cur, tgt):
+        """Move to bend values tgt; with an obstacle, along a planned path that keeps the arm clear of it.
+        Returns (pose, ForceLimit or None, bend values aimed for, note)."""
+        planner = self.planner()
+        if planner is None:
+            pose, lim = self._move(cur, tgt)
+            return pose, lim, tgt, ""
+        d0, d1 = np.array([cur["A"], cur["B"]]), np.array([tgt["A"], tgt["B"]])
+        way, used, note = planner.plan(d0, d1)
+        path = split_at_axes(d0, way)
+        model = self.model
+        dense = [a + (b - a) * t for a, b in zip([d0] + path, path) for t in np.linspace(0, 1, 6)[1:]]
+        self.plan_xz = model.predict([d0] + dense)[:, [0, 2]].round(1).tolist()
+        pts = [self._current_goals()] + [self.targets_abs({"A": float(p[0]), "B": float(p[1])}) for p in path]
+        lim = self._stream_path(pts)
+        used = {"A": float(used[0]), "B": float(used[1])}
+        return (self.pose() if lim else used), lim, used, note
 
     def _release_all(self):
         for i in motors.IDS:
@@ -502,7 +871,13 @@ class TipController:
                 note = f"target is {dist:.0f} mm outside the reachable area; going to the nearest reachable point. "
                 target = pred
                 st["target"] = pred.tolist()
-            cur, lim = self._move(self.pose(), {"A": float(d0[0]), "B": float(d0[1])})
+            self.plan_xz = None
+            st["message"] = "planning" if self.planner() is not None else "moving"
+            cur, lim, aimed, pnote = self._go(self.pose(), {"A": float(d0[0]), "B": float(d0[1])})
+            note += pnote
+            if abs(aimed["A"] - d0[0]) + abs(aimed["B"] - d0[1]) > 1e-9:  # target blocked by the obstacle
+                target = model.predict([[aimed["A"], aimed["B"]]])[0, [0, 2]]
+                st["target"] = target.tolist()
             if lim:
                 st.update(state="limited", message=note + f"force limit ({lim}); stopped short")
                 return
@@ -536,7 +911,13 @@ class TipController:
                 if np.linalg.norm(d_new - d) < 1e-3:
                     st.update(state="done", message=note + "at the edge of the workspace; can't get closer")
                     return
-                cur, lim = self._move({"A": float(d[0]), "B": float(d[1])}, {"A": float(d_new[0]), "B": float(d_new[1])})
+                planner = self.planner()
+                if planner is not None:
+                    c_now, c_new = planner.clearance(np.array([d, d_new]))
+                    if c_new < planner.need and c_new < c_now:
+                        st.update(state="done", message=note + "can't get closer without approaching the obstacle")
+                        return
+                cur, lim, _, _ = self._go({"A": float(d[0]), "B": float(d[1])}, {"A": float(d_new[0]), "B": float(d_new[1])})
                 d = np.array([cur["A"], cur["B"]])
                 if lim:
                     st.update(state="limited", message=note + f"force limit ({lim}); stopped short")
@@ -545,6 +926,8 @@ class TipController:
         except Stopped:
             st.update(state="stopped", message="stopped")
             self._hold()
+        except NoPath as e:  # the arm stays where it is
+            st.update(state="failed", message=str(e))
         except Fail as e:
             st.update(state="failed", message=f"{e}; released motors to rest")
             self._release_all()
@@ -685,6 +1068,29 @@ class TipController:
             tgt = {p: d[p] + (tgt[p] - d[p]) * JOY_LEAD / lead for p in PAIRS}
         return clamp_bend(tgt)
 
+    @staticmethod
+    def _avoid_step(planner, d, nxt):
+        """Gamepad: keep the arm clear of the rod. A step that would bring it closer than the clearance (and closer
+        than it is now) keeps only its part along the obstacle, so the arm slides around it; if even that gets
+        closer, the arm stops. Returns (next d, "" / "sliding" / "blocked")."""
+        a, b = np.array([d["A"], d["B"]]), np.array([nxt["A"], nxt["B"]])
+        c_now, c_next = planner.clearance(np.array([a, b]))
+        if c_next >= planner.need or c_next >= c_now:
+            return nxt, ""
+        keep = min(planner.need, c_now)
+        h = 1e-3
+        grad = np.array([(planner.clearance(a + e)[0] - planner.clearance(a - e)[0]) / (2 * h) for e in np.eye(2) * h])
+        gn2 = grad @ grad
+        if gn2 > 1e-9:
+            step = b - a
+            slide = step - min(0.0, step @ grad) / gn2 * grad
+            c = planner.clearance(a + slide)[0]
+            slide += max(0.0, keep - c) / gn2 * grad  # back onto the clearance level the tangent step left
+            nd = np.clip(a + slide, -1.0, 1.0)
+            if np.linalg.norm(nd - a) > 1e-4 and planner.clearance(nd)[0] >= keep - 0.3:
+                return {"A": float(nd[0]), "B": float(nd[1])}, "sliding"
+        return dict(d), "blocked"
+
     def _joy_loop(self):
         """Follow the stick: bend values move toward the stick target at the speed limit, a pair crossing the
         centre releases its cable before the opposite one pulls, and a force limit becomes a wall."""
@@ -742,6 +1148,12 @@ class TipController:
                 if not square and self.model is not None:  # tip mode: stay inside the model's workspace
                     c = self.model.clip([nxt["A"], nxt["B"]])
                     nxt = {"A": float(c[0]), "B": float(c[1])}
+                planner = self.planner()
+                avoided = ""
+                if planner is not None:
+                    nxt, avoided = self._avoid_step(planner, d, nxt)
+                    if avoided == "blocked" and jog and j.get("mode") == "tip":
+                        j["tgt_xz"] = None  # restart the jog target at the arm, so pushing elsewhere responds at once
                 for p, (pos, neg) in PAIRS.items():
                     if d[p] * nxt[p] < 0:
                         nxt[p] = 0.0  # release this cable fully before the opposite one pulls
@@ -788,7 +1200,8 @@ class TipController:
                 j["cmd"] = dict(d)
                 fresh = j.get("stick") is not None and now - j["t"] < JOY_STALE_S
                 j["message"] = ("moving" if live else "holding (trigger released)" if fresh
-                                else "holding (no stick input)") + (" · cables taut" if taut >= 1 else "")
+                                else "holding (no stick input)") + (" · cables taut" if taut >= 1 else "") \
+                    + {"sliding": " · sliding around the obstacle", "blocked": " · stopped at the obstacle"}.get(avoided, "")
                 if walls:
                     w = max(walls.values(), key=lambda w: w["t"])
                     j["message"] = (f"force limit on motor {w['motor']}: ease off, or keep pushing to retry in "
@@ -815,11 +1228,13 @@ class TipController:
             out["joy"]["target_xz"] = model.predict([[tgt["A"], tgt["B"]]])[0, [0, 2]].tolist()
         feed = self.latest_feed()
         out["feed"] = feed if feed and feed["age_s"] <= 2.0 else None
+        d = None
         if model is not None and self.ctl.bus and all(self.ctl.state.get(i) for i in motors.IDS) \
                 and all(m["zero_rad"] is not None for m in self.ctl.settings["motors"]):
             d = self.pose()
             out["pose"] = d
             out["predicted"] = model.predict([[d["A"], d["B"]]])[0].tolist()
+        out["obstacle"] = self._obstacle_snapshot(d)
         return out
 
     def model_info(self):

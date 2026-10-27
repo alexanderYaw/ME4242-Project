@@ -145,6 +145,33 @@ API: `POST /api/tip/goto {"x":40,"z":-30,"closed_loop":true}`, `POST /api/tip/mo
 `POST /api/tip/joy/start`, `POST /api/tip/joy {"mode":"tip","x":0,"y":1,"enable":true}`, `POST /api/tip/stop`;
 the camera feed posts to `POST /api/tip`.
 
+### Obstacle avoidance (rod)
+
+`tip_feed.py` also looks for an obstacle rod: by default an **orange** one (`--rod-color red|orange|yellow|pink|purple`,
+or **Pick rod colour** in the panel and click the rod in the camera view; `--no-rod` turns it off). It fits the rod's
+coloured pixels with a 3D line from the depth camera (`rod_detect.py`): ends, radius, and an end that runs out of the
+image is taken to continue 150 mm (into the pillar). The rod is static, so detections are merged: its known length only
+grows, and the arm passing in front can't hide part of it. **Mark rod ends** defines a rod of any colour (e.g. the grey
+prototype) by clicking its two ends in the camera view; a marked rod stays until **Forget rod**. The live view outlines
+the rod's colour in magenta and draws the rod in red.
+
+With **Plan moves around it** on, the GUI models the **whole arm**, not just the tip: the constant-curvature fit gives
+the arm's arc for any motor command, and **Move tip** follows a path in motor (bend) space that keeps every point of the
+arc at least the set clearance from the rod's surface (Dijkstra over a bend grid, then straightened). Paths may curl
+the arm beyond tip mode's 120° limit; that is how it gets **over the top** of a rod at mid-height (pull two adjacent
+motors hard so the whole arm lifts above the rod, swing across, lower on the other side). An arm that starts inside
+the clearance first backs away; a target too close to the rod goes to the nearest clear point; if no path keeps the
+clearance, the move is refused with the widest gap available (lower the clearance below it to allow that path). The
+joystick slides along the rod instead of pushing into it. The top view shades tip positions where the arm would touch
+the rod (red) or be inside the clearance (orange) and dashes the planned path; the side view shows where the rod crosses
+the bending plane. **Arm clearance** shows the model's distance (from motor angles) and the camera's (the arc through
+the measured tip). The clearance is from the arm's centreline: allow for the disc radius plus the model error (±10 mm
+typical, more at large bends, which were never measured). With the prototype rod beside the arm at mid-height, the way
+over the top passes about 16 mm from it at best.
+API: `POST /api/obstacle/settings {"avoid":true,"clearance_mm":20}`, `POST /api/obstacle/mark`, `POST /api/obstacle/clear`,
+`GET /api/obstacle/map`; the feed posts to `POST /api/obstacle` (a rod can be posted by hand too:
+`{"rod":{"p0":[x,y,z],"p1":[x,y,z],"radius":5}}`).
+
 ## Notes
 
 - Close Emio Labs / SOFA first. A running Emio Labs scene with Robot connection on sends every motor a goal

@@ -429,6 +429,69 @@ def camera_latest():
     return Response(camera["jpeg"], media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+class ObstacleFeedReq(BaseModel):
+    rod: dict | None = None         # {"p0": [x, y, z], "p1": [...], "radius": mm, ...} from colour detection
+    seen: bool = False              # rod seen in the latest image
+    hsv_picked: list | None = None  # colour range picked at the clicked pixel
+    marked: dict | None = None      # rod from marked ends
+    error: str | None = None        # a pick / marking that failed
+
+
+@app.post("/api/obstacle")
+def obstacle_feed(req: ObstacleFeedReq):
+    """Rod (obstacle) from tip_feed.py; the reply carries the colour and any pending pick / marking."""
+    for r in (req.rod, req.marked):
+        if r is not None and not (len(r.get("p0", [])) == 3 and len(r.get("p1", [])) == 3 and r.get("radius", -1) >= 0):
+            raise HTTPException(422, "rod needs p0, p1 (x, y, z) and radius")
+    return tip.obstacle_feed(req.rod, req.seen, req.hsv_picked, req.marked, req.error)
+
+
+@app.get("/api/obstacle/map")
+def obstacle_map():
+    return tip.obstacle_map()
+
+
+class ObstacleSettingsReq(BaseModel):
+    avoid: bool | None = None
+    clearance_mm: float | None = Field(None, ge=0, le=100)
+
+
+@app.post("/api/obstacle/settings")
+def obstacle_settings(req: ObstacleSettingsReq):
+    tip.obstacle_settings(req.avoid, req.clearance_mm)
+    return {"ok": True}
+
+
+class ObstaclePickReq(BaseModel):
+    u: float = Field(ge=0, le=1)  # position in the camera image, as fractions of its width / height
+    v: float = Field(ge=0, le=1)
+
+
+@app.post("/api/obstacle/pick")
+def obstacle_pick(req: ObstaclePickReq):
+    """Use the colour at this spot of the camera image as the rod's colour."""
+    tip.obstacle_pick(req.u, req.v)
+    return {"ok": True}
+
+
+class ObstacleMarkReq(BaseModel):
+    points: list[list[float]] = Field(min_length=2, max_length=2)  # the rod's two ends in the image (fractions)
+    radius_mm: float = Field(5.0, gt=0, le=50)
+
+
+@app.post("/api/obstacle/mark")
+def obstacle_mark(req: ObstacleMarkReq):
+    """Define the rod by its two ends in the camera image (any colour); tip_feed.py measures their depth."""
+    tip.obstacle_mark(req.points, req.radius_mm)
+    return {"ok": True}
+
+
+@app.post("/api/obstacle/clear")
+def obstacle_clear():
+    tip.obstacle_clear()
+    return {"ok": True}
+
+
 @app.get("/api/tip/model")
 def tip_model():
     info = tip.model_info()
