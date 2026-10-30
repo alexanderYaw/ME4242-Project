@@ -170,13 +170,16 @@ the camera feed posts to `POST /api/tip`.
 
 ### Obstacle avoidance (rod)
 
-`tip_feed.py` also looks for an obstacle rod: by default an **orange** one (`--rod-color red|orange|yellow|pink|purple`,
-or **Pick rod colour** in the panel and click the rod in the camera view; `--no-rod` turns it off). It fits the rod's
-coloured pixels with a 3D line from the depth camera (`rod_detect.py`): ends, radius, and an end that runs out of the
-image is taken to continue 150 mm (into the pillar). The rod is static, so detections are merged: its known length only
-grows, and the arm passing in front can't hide part of it. **Mark rod ends** defines a rod of any colour (e.g. the grey
-prototype) by clicking its two ends in the camera view; a marked rod stays until **Forget rod**. The live view outlines
-the rod's colour in magenta and draws the rod in red.
+`tip_feed.py` also looks for obstacle rods: by default all **orange** and **red** ones (`--rod-color` with one or
+more of `red orange yellow pink purple`, or **Pick rod colour** in the panel and click a rod in the camera view to look
+for that colour only; `--no-rod` turns it off). Per colour it drops blobs too thick to be a rod (e.g. a red box), then
+fits the coloured pixels with 3D lines from the depth camera one after the other (`rod_detect.py`): ends, radius, and an
+end that runs out of the image is taken to continue 150 mm (into the pillar). The rods are static, so detections are
+merged: a rod's known length only grows, and the arm passing in front can't hide part of it. Rods found by colour are
+**shown only** (top view, 3D view, panel), **not avoided**. **Mark rod ends** defines a rod of any colour (e.g. the grey
+prototype) by clicking its two ends in the camera view; a marked rod is the one moves plan around, and stays until
+**Forget rods** (which also forgets the found rods and a picked colour). The live view outlines the rod colours in
+magenta and draws each found rod in its colour.
 
 With **Plan moves around it** on, the GUI models the **whole arm**, not just the tip: the constant-curvature fit gives
 the arm's arc for any motor command, and **Move tip** follows a path in motor (bend) space that keeps every point of the
@@ -194,6 +197,29 @@ over the top passes about 16 mm from it at best.
 API: `POST /api/obstacle/settings {"avoid":true,"clearance_mm":20}`, `POST /api/obstacle/mark`, `POST /api/obstacle/clear`,
 `GET /api/obstacle/map`; the feed posts to `POST /api/obstacle` (a rod can be posted by hand too:
 `{"rod":{"p0":[x,y,z],"p1":[x,y,z],"radius":5}}`).
+
+### 3D view
+
+Below the tip panel, an interactive 3D model of the workspace (three.js, bundled in `motor_gui/app/static/vendor`, so
+it works offline). Drag to orbit, right-drag to pan, scroll to zoom; **Front** / **Top** / **Camera's view** presets
+(Top matches the 2D top view's motor layout; Camera's view looks from the depth camera, to compare with the live image).
+It shows:
+
+- the **arm as the model predicts it** from the motor angles (blue) and the **arm through the tracked tip** (green, the
+  arc that ends at the camera's tip), so model error is visible directly;
+- the **point cloud** from the depth camera (`tip_feed.py` sends every 4th pixel twice a second; `--cloud-fps`,
+  `--cloud-step`; 0 fps turns it off), cropped to the workspace around the arm (the "within … mm" box; 0 = everything).
+  Points of the obstacle's colour are drawn larger;
+- the **rod** and its **clearance zone** (the capsule the arm's centreline must stay out of);
+- the **tip surface**: every tip position tip mode can reach, shaded where the arm would come within the clearance
+  (orange) or touch the rod (red);
+- **planned paths**: the tip's path (dashed) and the arm's shape at points along it (faint), for the current / last move.
+  **Double-click the tip surface** to preview the path to that spot without moving (it also fills in X / Z; press
+  **Move tip** to go); **Play path** animates the arm along it. Hovering the surface shows the tip position and the
+  arm's clearance there.
+
+API: `GET /api/scene` (tip surface, rod), `GET /api/tip/plan`, `POST /api/tip/preview {"x":-49,"z":46}`,
+`GET /api/camera/cloud` (binary; format in `tip_feed.py`'s `CloudSender`).
 
 ## Notes
 

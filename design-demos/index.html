@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corset controller — redesign directions</title>
+<style>
+  :root { --ink: #16181b; --muted: #555b63; --line: #cfccc4; --bg: #f1f0ec; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink: #e8eaed; --muted: #a3a9b1; --line: #3a3f46; --bg: #141619; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 20px; margin: 0 0 6px; } h2 { font-size: 16px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; color: var(--muted); max-width: 72ch; }
+  section { border-top: 1px solid var(--line); padding: 18px 0; }
+  a { color: inherit; } .links { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }
+  .links a { display: inline-flex; align-items: center; min-height: 44px; }
+  code { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Corset effector controller: redesign directions</h1>
+  <p>Standalone interactive prototypes. All data, camera images and commands are simulated (<code>shared/sim.js</code>);
+    nothing connects to the robot or the control server. The SIMULATION strip at the top switches scenarios, injects
+    conditions and shows the simulated command log; it is not part of the designs.</p>
+  <section>
+    <h2>A · Ward monitor</h2>
+    <p>Alarm band under the bar, a dominant view, and monitor-style parameter rows on the right. Light paper and ink; colour only for status.</p>
+    <div class="links"><a href="dir-1.html">Open</a><a href="dir-1.html?scenario=joystick">Joystick</a><a href="dir-1.html?scenario=overload">Overload</a>
+      <a href="dir-1.html?scenario=camera">Camera stale</a><a href="dir-1.html?scenario=clearance">Clearance</a><a href="dir-1.html?scenario=disconnected">Disconnected</a><a href="dir-1.html?theme=night">Night</a></div>
+  </section>
+  <section>
+    <h2>B · Pilot</h2>
+    <p>The view fills the screen; telemetry and controls on opaque plates at the edges; Motors and Setup in a bottom sheet. Night first, tablet first.</p>
+    <div class="links"><a href="dir-2.html">Open</a><a href="dir-2.html?scenario=joystick">Joystick</a><a href="dir-2.html?scenario=overload">Overload</a>
+      <a href="dir-2.html?scenario=camera">Camera stale</a><a href="dir-2.html?scenario=clearance">Clearance</a><a href="dir-2.html?scenario=disconnected">Disconnected</a><a href="dir-2.html?theme=day">Day</a></div>
+  </section>
+  <section>
+    <h2>C · Floor plan</h2>
+    <p>Strict grid, a task rail with pictograms, a fixed control column, and the four motors drawn where they are on the robot.</p>
+    <div class="links"><a href="dir-3.html">Open</a><a href="dir-3.html?scenario=joystick">Joystick</a><a href="dir-3.html?scenario=overload">Overload</a>
+      <a href="dir-3.html?scenario=camera">Camera stale</a><a href="dir-3.html?scenario=clearance">Clearance</a><a href="dir-3.html?scenario=disconnected">Disconnected</a><a href="dir-3.html?theme=night">Night</a></div>
+  </section>
+  <section>
+    <h2>Background</h2>
+    <div class="links"><a href="thumbs.html">Six candidates (thumbnails)</a><a href="directions.md">Direction cards</a><a href="spec.md">Spec</a><a href="shots/">Screenshots</a></div>
+  </section>
+</main>
+</body>
+</html>

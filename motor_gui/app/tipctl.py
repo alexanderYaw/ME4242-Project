@@ -52,6 +52,8 @@ PLAN_STEP = 0.025        # obstacle planner: grid of bend values
 CHECK_STEP = 0.01        # ... path segments are checked this often (bend units)
 NEAR_PENALTY = 20.0      # ... extra cost for moving inside the clearance margin (times the missing fraction)
 CLEARANCE_MM = 20.0      # default: the arm's centreline stays this far from the rod's surface
+SCENE_GRID = 41          # 3D view: tip surface sampled on this many bend values per pair
+PLAN_ARMS = 9            # 3D view: arm shapes shown along a planned path
 
 
 class Stopped(Exception):
@@ -300,6 +302,13 @@ def split_at_axes(start, path):
     return out
 
 
+def densify(d0, path, k=5):
+    """d0 and points every 1/k of each straight piece of the path (bend values), shape (N, 2)."""
+    d0 = np.asarray(d0, dtype=float)
+    pts = [d0] + [np.asarray(p, dtype=float) for p in path]
+    return np.array([d0] + [a + (b - a) * t for a, b in zip(pts, pts[1:]) for t in np.arange(1, k + 1) / k])
+
+
 class Planner:
     """Paths in bend values that keep the arm (constant-curvature model: the whole arc, not just the tip) clear of
     the rod.
@@ -468,7 +477,7 @@ class TipController:
         self.soft_ma, self.hard_ma = SOFT_MA, HARD_MA
         self._hard_grace_until = 0.0  # after a back-off, the hard limit waits this long for the current to drop
         self.joy = {"active": False, "message": ""}
-        # obstacle (rod) from tip_feed.py, and the avoidance settings; kept in obstacle.json next to the model
+        # obstacle (rod, marked in the GUI) and the avoidance settings; kept in obstacle.json next to the model
         self.obstacle_path = self.model_path.parent / "obstacle.json"
         self.obs = {"avoid": True, "clearance_mm": CLEARANCE_MM, "hsv": None, "rod": None, "rod_t": None,
                     "source": None}
@@ -476,10 +485,17 @@ class TipController:
             self.obs.update(json.loads(self.obstacle_path.read_text()))
         except (OSError, ValueError):
             pass
+        if self.obs["source"] == "colour":  # from an older tip_feed.py: colour-detected rods aren't avoided now
+            self.obs.update(rod=None, rod_t=None, source=None)
+        # rods and other objects found by colour by tip_feed.py: shown in the GUI only, not avoided
+        self.rods = {"list": [], "t": None, "version": 0}
+        self.objects = {"list": [], "version": 0}
         self.obs_version = 0
         self.obs_feed = {"t": None, "seen": False, "pick": None, "mark": None, "reset": False, "error": ""}
         self._planner = (None, None)
         self.plan_xz = None  # predicted tip along the current planned path, for the GUI
+        self.plan_d, self.plan_id = None, 0  # ... and its bend values (3D view: arm shapes along it)
+        self.preview = None  # planned path to a target without moving (3D view)
 
     # -- model / feed -------------------------------------------------------------
     @property
@@ -530,9 +546,30 @@ class TipController:
             self.obs_version += 1
             self._save_obs()
 
-    def obstacle_feed(self, rod=None, seen=False, hsv_picked=None, marked=None, error=None):
+    def _set_rods(self, rods):
+        old = self.rods["list"]
+        rods = [{"p0": [float(v) for v in r["p0"]], "p1": [float(v) for v in r["p1"]], "radius": float(r["radius"]),
+                 "colour": str(r.get("colour", "")), **{k: r[k] for k in ("open", "visible_mm") if k in r}}
+                for r in rods]
+        if rods:
+            self.rods["t"] = time.time()
+        moved = len(rods) != len(old) or any(
+            a["colour"] != b["colour"] or abs(a["radius"] - b["radius"]) > 1.0 or
+            max(np.linalg.norm(np.subtract(a[k], b[k])) for k in ("p0", "p1")) > 2.0 for a, b in zip(old, rods))
+        if moved:  # small jitter doesn't redraw
+            self.rods["list"] = rods
+            self.rods["version"] += 1
+
+    def _set_objects(self, objects):
+        self.objects = {"list": objects, "version": self.objects["version"] + 1}
+
+    def objects_info(self):
+        """Objects with their surface meshes (3D view)."""
+        return {"version": self.objects["version"], "objects": self.objects["list"]}
+
+    def obstacle_feed(self, rods=None, seen=False, hsv_picked=None, marked=None, error=None, objects=None):
         """Update from tip_feed.py (a few times per second). Returns what the feed needs: the rod colour, a
-        pending colour pick or end marking (image fractions), and whether to forget its tracked rod."""
+        pending colour pick or end marking (image fractions), and whether to forget its tracked rods."""
         f = self.obs_feed
         f.update(t=time.monotonic(), seen=bool(seen))
         if error:
@@ -540,13 +577,14 @@ class TipController:
         if hsv_picked:
             self.obs["hsv"] = hsv_picked
             f.update(pick=None, error="", reset=True)
-            self.obs["source"] = None  # a picked colour takes over from marked ends
             self._save_obs()
         elif marked:
             f.update(mark=None, error="")
             self._set_rod(marked, "marked")
-        elif rod and self.obs["source"] != "marked":
-            self._set_rod(rod, "colour")
+        if rods is not None:
+            self._set_rods(rods)
+        if objects is not None and objects != self.objects["list"]:
+            self._set_objects(objects)
         out = {"hsv": self.obs["hsv"], "pick": f["pick"], "mark": f["mark"], "reset": f["reset"]}
         f["reset"] = False
         return out
@@ -558,9 +596,12 @@ class TipController:
         self.obs_feed.update(mark={"points": points, "radius": radius}, pick=None, error="")
 
     def obstacle_clear(self):
-        self.obs.update(rod=None, rod_t=None, source=None)
+        """Forget the marked rod, the detected rods and a picked colour (back to tip_feed.py's colours)."""
+        self.obs.update(rod=None, rod_t=None, source=None, hsv=None)
         self.obs_feed.update(reset=True, pick=None, mark=None, error="")
         self.obs_version += 1
+        self._set_rods([])
+        self._set_objects([])
         self._save_obs()
 
     def obstacle_settings(self, avoid=None, clearance_mm=None):
@@ -605,7 +646,11 @@ class TipController:
                "rod_age_s": time.time() - o["rod_t"] if o["rod_t"] else None,
                "feed": f["t"] is not None and time.monotonic() - f["t"] < 2.0, "seen": f["seen"],
                "picking": f["pick"] is not None, "marking": f["mark"] is not None, "error": f["error"],
-               "plan_xz": self.plan_xz}
+               "plan_xz": self.plan_xz, "rods": self.rods["list"], "rods_version": self.rods["version"],
+               "rods_age_s": time.time() - self.rods["t"] if self.rods["t"] else None,
+               "objects": [{k: ob.get(k) for k in ("id", "colour", "shape", "size_mm", "centre", "holes", "outline",
+                                                   "pockets")}
+                           for ob in self.objects["list"]], "objects_version": self.objects["version"]}
         model = self.model
         if o["rod"] is not None and model is not None and model.has_shape:
             if d is not None:
@@ -614,6 +659,88 @@ class TipController:
             if feed and feed["age_s"] < FEED_MAX_AGE_S and feed.get("markers"):
                 arc = arc_through_tip(model.cc["base"], [feed["x"], feed["y"], feed["z"]])
                 out["clear_camera_mm"] = float(np.min(rod_clearance(arc, o["rod"])))
+        return out
+
+    # -- 3D view ------------------------------------------------------------------
+    def _set_plan(self, ds):
+        self.plan_d = ds
+        self.plan_xz = None if ds is None else self.model.predict(ds)[:, [0, 2]].round(1).tolist()
+        self.plan_id += 1
+
+    def arm_points(self, D):
+        """The arm (attachment point, then backbone()) for bend values D: (len(D), ARC_POINTS + 1, 3)."""
+        model = self.model
+        B = model.backbone(D)
+        base = np.broadcast_to(np.asarray(model.cc["base"], dtype=float), (len(B), 1, 3))
+        return np.concatenate([base, B], axis=1)
+
+    def _path_shapes(self, ds):
+        """Tip path (N, 3) and a few arm shapes along a path of bend values, for the 3D view."""
+        ds = np.asarray(ds, dtype=float)
+        out = {"tips": self.model.predict(ds).round(1).tolist(), "arms": []}
+        if self.model.has_shape:
+            idx = np.unique(np.linspace(0, len(ds) - 1, min(len(ds), PLAN_ARMS)).round().astype(int))
+            out["arms"] = self.arm_points(ds[idx]).round(1).tolist()
+        p = self.planner()
+        if p is not None:
+            out["clear_min_mm"] = round(float(np.min(p.clearance(ds))), 1)
+        return out
+
+    def plan_shapes(self):
+        """The current (or last) move's planned path, if it went around the obstacle."""
+        if self.plan_d is None or self.model is None:
+            return {"id": self.plan_id, "tips": [], "arms": []}
+        return {"id": self.plan_id, **self._path_shapes(self.plan_d)}
+
+    def _known_pose(self):
+        if self.ctl.bus and all(self.ctl.state.get(i) for i in motors.IDS) \
+                and all(m["zero_rad"] is not None for m in self.ctl.settings["motors"]):
+            return self.pose()
+        return None
+
+    def plan_preview(self, x, z):
+        """Plan a move to tip (x, z) from where the arm is now (or from rest if the motors aren't known) without
+        moving: the arm shapes along the way, for the 3D view. Raises ValueError if there is no way."""
+        model = self.model
+        if model is None:
+            raise ValueError(f"No tip model at {self.model_path}; run fit_tip_model.py first")
+        d1, pred, dist = model.inverse(x, z)
+        cur = self._known_pose()
+        d0 = np.array([cur["A"], cur["B"]]) if cur else np.zeros(2)
+        note = "" if cur else "from rest (motors not connected). "
+        if dist > OUTSIDE_MM:
+            note += f"target is {dist:.0f} mm outside the reachable area; nearest reachable point. "
+        planner = self.planner()
+        if planner is None:
+            path = [d1]
+        else:
+            try:
+                way, _, pnote = planner.plan(d0, d1)
+            except NoPath as e:
+                self.preview = None
+                raise ValueError(str(e))
+            path, note = split_at_axes(d0, way), note + pnote
+        self.preview = {"target": [x, z], "note": note.strip(), **self._path_shapes(densify(d0, path))}
+        return self.preview
+
+    def scene_info(self):
+        """Static part of the 3D view: the arm's attachment, the tip surface (tip positions over a grid of bend
+        values, with the arm's clearance from the rod at each) and the rod. 'version' changes with the model or
+        the obstacle."""
+        model = self.model
+        if model is None:
+            return None
+        g = np.linspace(-1, 1, SCENE_GRID)
+        A, B = np.meshgrid(g, g, indexing="ij")
+        D = np.column_stack([A.ravel(), B.ravel()])
+        inside = model.bend_rad(D) <= model.max_bend if model.max_bend is not None else np.ones(len(D), bool)
+        out = {"version": f"{self._model_mtime}-{self.obs_version}-{self.obs['avoid']}", "has_shape": model.has_shape,
+               "base": model.info["base"], "length_mm": model.info["length_mm"], "rest_tip": model.info["rest_tip"],
+               "rod": self.obs["rod"], "clearance_mm": self.obs["clearance_mm"], "avoid": self.obs["avoid"],
+               "grid": SCENE_GRID, "tips": model.predict(D).round(1).tolist(), "inside": inside.tolist()}
+        p = self.planner()
+        if p is not None:
+            out["clear"] = p.clearance(D).round(1).tolist()
         return out
 
     # -- pose ---------------------------------------------------------------------
@@ -762,9 +889,9 @@ class TipController:
             start = end
         return dict(tgt), None
 
-    def _go(self, cur, tgt):
-        """Move to bend values tgt; with an obstacle, along a planned path that keeps the arm clear of it.
-        Returns (pose, ForceLimit or None, bend values aimed for, note)."""
+    def _go(self, cur, tgt, record=True):
+        """Move to bend values tgt; with an obstacle, along a planned path that keeps the arm clear of it (shown in
+        the GUI if record). Returns (pose, ForceLimit or None, bend values aimed for, note)."""
         planner = self.planner()
         if planner is None:
             pose, lim = self._move(cur, tgt)
@@ -772,9 +899,8 @@ class TipController:
         d0, d1 = np.array([cur["A"], cur["B"]]), np.array([tgt["A"], tgt["B"]])
         way, used, note = planner.plan(d0, d1)
         path = split_at_axes(d0, way)
-        model = self.model
-        dense = [a + (b - a) * t for a, b in zip([d0] + path, path) for t in np.linspace(0, 1, 6)[1:]]
-        self.plan_xz = model.predict([d0] + dense)[:, [0, 2]].round(1).tolist()
+        if record:
+            self._set_plan(densify(d0, path))
         pts = [self._current_goals()] + [self.targets_abs({"A": float(p[0]), "B": float(p[1])}) for p in path]
         lim = self._stream_path(pts)
         used = {"A": float(used[0]), "B": float(used[1])}
@@ -871,7 +997,7 @@ class TipController:
                 note = f"target is {dist:.0f} mm outside the reachable area; going to the nearest reachable point. "
                 target = pred
                 st["target"] = pred.tolist()
-            self.plan_xz = None
+            self._set_plan(None)
             st["message"] = "planning" if self.planner() is not None else "moving"
             cur, lim, aimed, pnote = self._go(self.pose(), {"A": float(d0[0]), "B": float(d0[1])})
             note += pnote
@@ -917,7 +1043,8 @@ class TipController:
                     if c_new < planner.need and c_new < c_now:
                         st.update(state="done", message=note + "can't get closer without approaching the obstacle")
                         return
-                cur, lim, _, _ = self._go({"A": float(d[0]), "B": float(d[1])}, {"A": float(d_new[0]), "B": float(d_new[1])})
+                cur, lim, _, _ = self._go({"A": float(d[0]), "B": float(d[1])}, {"A": float(d_new[0]), "B": float(d_new[1])},
+                                          record=False)  # the GUI keeps showing the main path
                 d = np.array([cur["A"], cur["B"]])
                 if lim:
                     st.update(state="limited", message=note + f"force limit ({lim}); stopped short")
@@ -1228,12 +1355,18 @@ class TipController:
             out["joy"]["target_xz"] = model.predict([[tgt["A"], tgt["B"]]])[0, [0, 2]].tolist()
         feed = self.latest_feed()
         out["feed"] = feed if feed and feed["age_s"] <= 2.0 else None
-        d = None
-        if model is not None and self.ctl.bus and all(self.ctl.state.get(i) for i in motors.IDS) \
-                and all(m["zero_rad"] is not None for m in self.ctl.settings["motors"]):
-            d = self.pose()
+        d = self._known_pose() if model is not None else None
+        if d is not None:
             out["pose"] = d
             out["predicted"] = model.predict([[d["A"], d["B"]]])[0].tolist()
+        if model is not None and model.has_shape:  # the arm's shape, for the 3D view
+            if d is not None:
+                out["arm_model"] = self.arm_points([[d["A"], d["B"]]])[0].round(1).tolist()
+            if out["feed"] and out["feed"]["age_s"] < FEED_MAX_AGE_S and out["feed"].get("markers"):
+                f = out["feed"]
+                arc = arc_through_tip(model.cc["base"], [f["x"], f["y"], f["z"]])
+                out["arm_camera"] = np.vstack([model.cc["base"], arc]).round(1).tolist()
+        out["plan_id"] = self.plan_id
         out["obstacle"] = self._obstacle_snapshot(d)
         return out
 

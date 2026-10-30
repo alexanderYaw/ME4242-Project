@@ -11,7 +11,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import motors
@@ -180,14 +181,17 @@ class Controller:
 ctl = Controller()
 tip = tipctl.TipController(ctl, DATA_DIR / "tip_model.json")
 STATIC = Path(__file__).parent / "static"
-UI_VERSION = hashlib.sha1((STATIC / "index.html").read_bytes()).hexdigest()[:12]  # open pages reload when it changes
+UI_FILES = ("index.html", "scene3d.js")
+UI_VERSION = hashlib.sha1(b"".join((STATIC / f).read_bytes() for f in UI_FILES)).hexdigest()[:12]  # open pages reload when it changes
 camera = {"jpeg": None, "t": 0.0}  # latest live-view image from tip_feed.py
+cloud = {"data": None, "t": 0.0, "seq": 0}  # latest point cloud from tip_feed.py (3D view)
 
 
 def full_snapshot():
     s = ctl.snapshot()
     s["tip"] = tip.snapshot()
     s["camera"] = {"age_s": time.monotonic() - camera["t"] if camera["jpeg"] else None}
+    s["cloud"] = {"age_s": time.monotonic() - cloud["t"] if cloud["data"] else None, "seq": cloud["seq"]}
     s["ui_version"] = UI_VERSION
     return s
 
@@ -203,11 +207,14 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="EMIO motor GUI", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})  # always pick up GUI updates
+    # always pick up GUI updates; the version tag makes the browser fetch a changed scene3d.js too
+    html = (STATIC / "index.html").read_text().replace("{{UI_VERSION}}", UI_VERSION)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/state")
@@ -429,21 +436,66 @@ def camera_latest():
     return Response(camera["jpeg"], media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+@app.post("/api/camera/cloud")
+async def camera_cloud(request: Request):
+    """Point cloud of the workspace from tip_feed.py (binary, see CloudSender there), for the 3D view."""
+    body = await request.body()
+    if len(body) < 8:
+        raise HTTPException(415, "expected a point cloud")
+    cloud.update(data=body, t=time.monotonic(), seq=cloud["seq"] + 1)
+    return {"ok": True}
+
+
+@app.get("/api/camera/cloud")
+def camera_cloud_latest(after: int = -1):
+    """The latest point cloud; 204 if it isn't newer than `after`."""
+    if cloud["data"] is None or cloud["seq"] <= after:
+        return Response(status_code=204)
+    return Response(cloud["data"], media_type="application/octet-stream",
+                    headers={"Cache-Control": "no-store", "X-Seq": str(cloud["seq"])})
+
+
+@app.get("/api/scene")
+def scene():
+    """3D view: tip surface, arm attachment and rod (changes with the model / obstacle)."""
+    info = tip.scene_info()
+    if info is None:
+        raise HTTPException(404, "No tip model; run fit_tip_model.py")
+    return info
+
+
+@app.get("/api/tip/plan")
+def tip_plan():
+    """Arm shapes along the current / last move's planned path."""
+    return tip.plan_shapes()
+
+
 class ObstacleFeedReq(BaseModel):
-    rod: dict | None = None         # {"p0": [x, y, z], "p1": [...], "radius": mm, ...} from colour detection
-    seen: bool = False              # rod seen in the latest image
+    rods: list[dict] | None = None  # [{"p0": [x, y, z], "p1": [...], "radius": mm, "colour": name, ...}] by colour
+    seen: bool = False              # rods seen in the latest image
     hsv_picked: list | None = None  # colour range picked at the clicked pixel
     marked: dict | None = None      # rod from marked ends
     error: str | None = None        # a pick / marking that failed
+    objects: list[dict] | None = None  # other objects by colour (mesh, outline, shape); only sent when they change
 
 
 @app.post("/api/obstacle")
 def obstacle_feed(req: ObstacleFeedReq):
-    """Rod (obstacle) from tip_feed.py; the reply carries the colour and any pending pick / marking."""
-    for r in (req.rod, req.marked):
+    """Rods and objects (obstacles) from tip_feed.py; the reply carries the colour and any pending pick / marking.
+    Rods and objects found by colour are only shown; a marked rod is avoided."""
+    for r in [*(req.rods or []), req.marked]:
         if r is not None and not (len(r.get("p0", [])) == 3 and len(r.get("p1", [])) == 3 and r.get("radius", -1) >= 0):
             raise HTTPException(422, "rod needs p0, p1 (x, y, z) and radius")
-    return tip.obstacle_feed(req.rod, req.seen, req.hsv_picked, req.marked, req.error)
+    for o in req.objects or []:
+        if not all(k in o for k in ("id", "colour", "shape", "size_mm", "centre", "verts", "faces", "outline")):
+            raise HTTPException(422, "object needs id, colour, shape, size_mm, centre, verts, faces and outline")
+    return tip.obstacle_feed(req.rods, req.seen, req.hsv_picked, req.marked, req.error, req.objects)
+
+
+@app.get("/api/obstacle/objects")
+def obstacle_objects():
+    """Objects found by colour, with their surface meshes (3D view)."""
+    return tip.objects_info()
 
 
 @app.get("/api/obstacle/map")
@@ -504,6 +556,20 @@ class TipGotoReq(BaseModel):
     x: float
     z: float
     closed_loop: bool = True
+
+
+class TipPreviewReq(BaseModel):
+    x: float
+    z: float
+
+
+@app.post("/api/tip/preview")
+def tip_preview(req: TipPreviewReq):
+    """Plan a move to (x, z) without moving: arm shapes along the way (around the obstacle)."""
+    try:
+        return tip.plan_preview(req.x, req.z)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.post("/api/tip/goto")

@@ -95,6 +95,13 @@
   .chip.on { color: #fff; background: var(--ok); }
   .cam-box.picking { cursor: crosshair; outline: 2px solid var(--warn); }
   .obs-box input[type=number] { width: 64px; }
+  .scene-view { margin-top: 14px; }
+  .scene-box { position: relative; width: 100%; height: 560px; border: 1px solid var(--line); border-radius: 8px;
+               overflow: hidden; background: var(--bg); }
+  .scene-box canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+  .scene-hover { position: absolute; left: 8px; bottom: 6px; font: 12px var(--mono); color: var(--muted); pointer-events: none; }
+  .scene-tools { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 13px; }
+  .scene-tools input[type=number] { width: 64px; }
   .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 </style>
 </head>
@@ -130,7 +137,8 @@
         <span><i style="border:2px solid var(--muted);width:6px;height:6px"></i>tip (model, from motor angles)</span>
         <span><i style="background:var(--danger)"></i>target</span>
         <span><i style="border:2px solid var(--warn);width:6px;height:6px"></i>gamepad target</span><span>shaded: reachable area</span>
-        <span id="obsLegend" hidden><i style="background:var(--danger);border-radius:0"></i>rod ·
+        <span id="obsBarsLegend" hidden>thin coloured lines / outlines: rods and objects found by colour (not avoided)</span>
+        <span id="obsLegend" hidden><i style="background:var(--danger);border-radius:0"></i>marked rod ·
           <i style="background:color-mix(in srgb, var(--danger) 45%, transparent);border-radius:0"></i>arm would touch it ·
           <i style="background:color-mix(in srgb, var(--warn) 35%, transparent);border-radius:0"></i>within clearance ·
           dashed: planned path</span></div>
@@ -184,7 +192,8 @@
           (press any gamepad button first so the browser sees it). Moves follow the same pair rules and current limits.</span>
       </div>
       <div class="joy-box obs-box">
-        <div class="joy-row"><h3>Obstacle (rod)</h3><span class="chip" id="obsChip">no rod</span></div>
+        <div class="joy-row"><h3>Obstacles</h3><span class="chip" id="obsChip">no rod</span></div>
+        <div class="tip-status" id="obsBars" style="min-height:1.4em"></div>
         <label><input type="checkbox" id="obsAvoid"> Plan moves around it, arm at least
           <input type="number" id="obsClearance" min="0" max="100" step="1"> mm clear</label>
         <div class="readouts" style="grid-template-columns:repeat(2,1fr);margin:0">
@@ -192,14 +201,17 @@
           <div><span>Arm clearance (camera)</span><span id="obsClrCam">—</span></div>
         </div>
         <div class="joy-row">
-          <button id="obsPick" title="Then click the rod in the camera view">Pick rod colour</button>
+          <button id="obsPick" title="Then click a rod in the camera view; only that colour is looked for until Forget">Pick rod colour</button>
           <button id="obsMark" title="Then click the rod's two ends in the camera view (any colour)">Mark rod ends</button>
-          <button id="obsForget">Forget rod</button>
+          <button id="obsForget" title="Forget the marked rod, the detected rods and a picked colour">Forget rods</button>
         </div>
         <div class="tip-status" id="obsStatus" style="min-height:1.4em"></div>
-        <span class="hint" style="padding:0">tip_feed.py finds an <b>orange</b> rod by itself (or the colour you pick)
-          and measures it with the depth camera. <b>Mark rod ends</b> works for any colour (e.g. the grey prototype):
-          click both ends in the camera view; it stays until you press Forget. Moves to a target then follow a path that
+        <span class="hint" style="padding:0">tip_feed.py finds the <b>orange</b> and <b>red</b> rods by itself (or the
+          colour you pick), and other objects of those colours or <b>green</b> (a tray, a piece: shape, size and the surface the
+          camera sees; touching pieces are split; a tray's shaped pockets are found from depth),
+          and measures them with the depth camera; they are shown in the views but <b>not avoided</b>.
+          <b>Mark rod ends</b> works for any colour (e.g. the grey prototype): click both ends in the camera view; it stays
+          until you press Forget, and only this rod is avoided. Moves to a target then follow a path that
           keeps the whole arm (constant-curvature model) clear of the rod, curling it over the rod when that is the only way
           round, and the joystick slides along the rod instead of pushing into it. Clearance is from the arm's centreline to
           the rod's surface: allow for the disc radius plus the model error (±10 mm).</span>
@@ -209,8 +221,35 @@
         (one cable of each opposing pair pulls at a time). Stop / Esc / TORQUE OFF ALL interrupt a move.</p>
     </div>
   </div>
+  <div class="view scene-view">
+    <span class="view-title">3D view — drag to orbit, right-drag to pan, scroll to zoom; double-click the tip surface to
+      preview a move there</span>
+    <div class="scene-tools">
+      <label><input type="checkbox" id="sceneCloud" checked> camera point cloud</label>
+      <label>within <input type="number" id="sceneCrop" value="250" min="0" step="25"> mm of the arm (0 = all)</label>
+      <label><input type="checkbox" id="sceneSurface" checked> tip surface</label>
+      <label><input type="checkbox" id="sceneZone" checked> clearance zone</label>
+      <label><input type="checkbox" id="sceneArmCam" checked> arm from camera</label>
+      <label><input type="checkbox" id="scenePath" checked> planned path</label>
+      <span class="row" style="margin:0"><button id="sceneFront">Front</button><button id="sceneTop">Top</button>
+        <button id="sceneCam" title="From the depth camera's position, to compare with the live image" disabled>Camera's view</button>
+        <button id="scenePlay" disabled title="Animate the arm along the planned path">Play path</button></span>
+    </div>
+    <div class="scene-box" id="sceneBox"><canvas id="sceneCanvas"></canvas><span class="scene-hover" id="sceneHover"></span>
+      <span class="cam-note" id="sceneNote" style="position:absolute;inset:0;display:none;place-items:center">Needs a fitted tip model
+        (<code>fit_tip_model.py</code>)</span></div>
+    <div class="legend"><span><i style="background:var(--accent)"></i>arm (model, from motor angles)</span>
+      <span><i style="background:var(--ok)"></i>arm through the tracked tip (camera)</span>
+      <span><i style="background:var(--warn)"></i>marked rod · faint: clearance zone · rods and objects found by colour in their colour (not avoided)</span>
+      <span><i style="background:color-mix(in srgb, var(--accent) 40%, transparent);border-radius:0"></i>tip surface (tip-mode reach),
+        <i style="background:var(--warn);border-radius:0"></i>arm within clearance, <i style="background:var(--danger);border-radius:0"></i>arm touches rod</span>
+      <span><i style="background:var(--danger)"></i>target · dashed: tip path, faint arms: shapes along it</span>
+      <span>points: depth camera (large: obstacle colour) · arrows: <span style="color:#e0533d">+x</span>
+        <span style="color:#3d7be0">+z</span></span> <span id="sceneCloudInfo" hidden></span></div>
+    <div class="tip-status" id="sceneMsg" style="min-height:1.4em"></div>
+  </div>
   <div class="view cam-view">
-    <span class="view-title" id="camTitle">Camera (live) — tracked marker outlined, rod in magenta / red</span>
+    <span class="view-title" id="camTitle">Camera (live) — tracked marker outlined, rod colours in magenta, found rods in their colour</span>
     <div class="cam-box" id="camBox"><img id="camImg" alt="Live camera view">
       <span class="cam-note" id="camNote">Camera view off: run <code>~/emio-venv/bin/python tip_feed.py</code></span></div>
   </div>
@@ -480,6 +519,22 @@ function drawTop(t) {
   g.closePath(); g.fillStyle = cssVar("--accent") + "22"; g.fill(); g.strokeStyle = cssVar("--accent") + "88"; g.stroke();
   g.fillStyle = muted + "99"; tipModel.samples.forEach(([x, z]) => { const [px, py] = P(x, z); g.fillRect(px - 1, py - 1, 2, 2); });
   const o = t.obstacle;
+  if (o && o.objects) o.objects.forEach(ob => {  // objects found by colour, seen from above: shown, not avoided
+    const c = rodColour(ob.colour);
+    g.beginPath(); ob.outline.forEach(([x, , z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z))); g.closePath();
+    g.fillStyle = c + "44"; g.fill(); g.strokeStyle = c; g.lineWidth = 1.5; g.stroke(); g.lineWidth = 1;
+    (ob.pockets || []).forEach(pk => {  // shaped holes, dashed
+      g.setLineDash([3, 3]); g.beginPath(); pk.outline.forEach(([x, , z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z)));
+      g.closePath(); g.stroke(); g.setLineDash([]);
+    });
+    const [cx, cy] = P(ob.centre[0], ob.centre[2]);
+    g.fillStyle = c; g.font = "11px system-ui"; g.textAlign = "center"; g.fillText(ob.shape, cx, cy + 4); g.textAlign = "left";
+  });
+  if (o && o.rods) o.rods.forEach(r => {  // found by colour: shown, not avoided
+    const [ax, ay] = P(r.p0[0], r.p0[2]), [bx, by] = P(r.p1[0], r.p1[2]);
+    g.strokeStyle = rodColour(r.colour) + "bb"; g.lineCap = "round"; g.lineWidth = Math.max(2, 2 * r.radius * v.k);
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.lineCap = "butt"; g.lineWidth = 1;
+  });
   if (o && o.rod) {
     if (obsMap && obsMap.version === o.version && obsMap.rod) {  // tip positions where the arm would be too close
       const sz = Math.max(3, obsMap.step_mm * v.k);
@@ -491,7 +546,7 @@ function drawTop(t) {
     g.strokeStyle = cssVar("--danger"); g.lineCap = "round"; g.lineWidth = Math.max(3, 2 * r.radius * v.k);
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.lineCap = "butt"; g.lineWidth = 1;
     g.fillStyle = cssVar("--danger"); g.font = "11px system-ui";
-    g.fillText(`rod, y ${((r.p0[1] + r.p1[1]) / 2).toFixed(0)}`, (ax + bx) / 2 + 8, (ay + by) / 2 - 8);
+    g.fillText(`marked rod, y ${((r.p0[1] + r.p1[1]) / 2).toFixed(0)}`, (ax + bx) / 2 + 8, (ay + by) / 2 - 8);
   }
   if (o && o.plan_xz && o.plan_xz.length > 1) {
     g.setLineDash([6, 4]); g.strokeStyle = cssVar("--accent"); g.lineWidth = 2; g.beginPath();
@@ -605,6 +660,7 @@ function renderTip(s) {
   $("#tipGo").disabled = t.busy || !tipModel || !s.connected; $("#tipStop").disabled = !t.busy;
   renderObstacle(t.obstacle, t);
   drawTop(t); drawSide(t);
+  if (window.scene3d) window.scene3d.update(s);
 }
 
 function tipGoto() {
@@ -613,18 +669,22 @@ function tipGoto() {
   tipTarget = [x, z];
   api("/api/tip/goto", { x, z, closed_loop: $("#tipClosed").checked }).then(() => showError("")).catch(() => {});
 }
+function setTipTarget(x, z) { $("#tipX").value = x.toFixed(0); $("#tipZ").value = z.toFixed(0); tipTarget = [x, z]; }  // also the 3D view
 $("#tipGo").addEventListener("click", tipGoto);
 $("#tipStop").addEventListener("click", () => api("/api/tip/stop", {}).catch(() => {}));
 $("#tipTop").addEventListener("click", e => {
   if (!tipView) return;
   const r = e.target.getBoundingClientRect();
   const u = tipView.wx(e.clientX - r.left), w = tipView.wy(e.clientY - r.top), x = view.x(u, w), z = view.z(u, w);
-  $("#tipX").value = x.toFixed(0); $("#tipZ").value = z.toFixed(0); tipTarget = [x, z];
+  setTipTarget(x, z);
   if ($("#tipClick").checked && !(state && state.tip && state.tip.busy)) tipGoto();
 });
 setInterval(() => { if (state && state.tip && state.tip.model) loadTipModel(); }, 15000);  // pick up refits
 
 // ---------------- Obstacle ----------------
+const ROD_COLOURS = { red: "#d6322a", orange: "#f08a24", yellow: "#e2b714", pink: "#e86fb0", purple: "#8e44ad",
+  green: "#3f8a3a" };
+const rodColour = name => ROD_COLOURS[name] || cssVar("--warn");  // "picked": a colour picked in the GUI
 let obsMap = null, obsVersion = null, camMode = null;  // camMode: null, "pick" or { mark: [[u, v], ...] }
 async function loadObsMap(version) {
   obsVersion = version;
@@ -640,10 +700,24 @@ function renderObstacle(o, t) {
   if (!o) return;
   if (o.version !== obsVersion) loadObsMap(o.version);
   $("#obsLegend").hidden = !o.rod;
-  const r = o.rod, age = o.rod_age_s;
-  $("#obsChip").textContent = r ? `${o.source === "marked" ? "rod marked" : o.seen && o.feed ? "rod seen" : `rod last seen ${age < 120 ? age.toFixed(0) + " s" : (age / 60).toFixed(0) + " min"} ago`}`
-    + ` · r ${r.radius.toFixed(0)} mm` : o.feed ? (o.hsv_set ? "looking for the picked colour" : "looking for an orange rod") : "no rod (camera feed off)";
-  $("#obsChip").classList.toggle("live", !!(r && (o.source === "marked" || (o.seen && o.feed))));
+  const r = o.rod, rods = o.rods || [], objs = o.objects || [], age = o.rods_age_s;
+  $("#obsBarsLegend").hidden = !rods.length && !objs.length;
+  $("#obsChip").textContent = r ? `rod marked · r ${r.radius.toFixed(0)} mm`
+    : rods.length || objs.length ? [rods.length && `${rods.length} rod${rods.length > 1 ? "s" : ""}`,
+        objs.length && `${objs.length} object${objs.length > 1 ? "s" : ""}`].filter(Boolean).join(", ")
+      + (o.feed ? " found" : " found before the camera feed stopped")
+    : o.feed ? (o.hsv_set ? "looking for the picked colour" : "looking for orange / red rods") : "no rods (camera feed off)";
+  $("#obsChip").classList.toggle("live", !!(r || ((rods.length || objs.length) && o.feed)));
+  const counts = {};
+  rods.forEach(b => { counts[b.colour] = (counts[b.colour] || 0) + 1; });
+  $("#obsBars").innerHTML = rods.length ? "Found by colour (shown, not avoided): " + Object.entries(counts).map(([c, n]) =>
+    `<b style="color:${rodColour(c)}">${n} ${c === "picked" ? "of the picked colour" : c}</b>`).join(", ")
+    + (o.feed && age != null && age > 2 ? ` · last seen ${age < 120 ? age.toFixed(0) + " s" : (age / 60).toFixed(0) + " min"} ago` : "") : "";
+  if (objs.length) $("#obsBars").innerHTML += (rods.length ? "<br>" : "") + "Objects (shown, not avoided): " + objs.map(ob =>
+    `<b style="color:${rodColour(ob.colour)}">${ob.colour} ${ob.shape}</b> ${ob.size_mm[0].toFixed(0)}×${ob.size_mm[1].toFixed(0)} mm`
+    + (ob.holes > 0.25 ? " (open / mesh)" : "")
+    + (ob.pockets && ob.pockets.length ? ` with pockets: ${ob.pockets.map(pk => `${pk.shape} ${pk.size_mm[0].toFixed(0)} mm`
+      + (pk.depth_mm != null ? ` (${pk.depth_mm.toFixed(0)} mm deep)` : "")).join(", ")}` : "")).join("; ");
   if (document.activeElement !== $("#obsClearance")) $("#obsClearance").value = o.clearance_mm;
   $("#obsAvoid").checked = o.avoid;
   const clr = (el, v) => {
@@ -652,7 +726,7 @@ function renderObstacle(o, t) {
   };
   clr($("#obsClrModel"), o.clear_model_mm); clr($("#obsClrCam"), o.clear_camera_mm);
   $("#obsPick").disabled = $("#obsMark").disabled = !o.feed;
-  $("#obsForget").disabled = !r;
+  $("#obsForget").disabled = !r && !rods.length && !objs.length && !o.hsv_set;
   if (camMode && !o.feed) setCamMode(null);
   $("#obsStatus").textContent = camMode === "pick" ? "Click the rod in the camera view to use its colour."
     : camMode ? `Click the rod's ${camMode.mark.length ? "other" : "first"} end in the camera view.`
@@ -767,5 +841,7 @@ setInterval(joyTick, 50);
 loadPorts();
 connectWs();
 </script>
+<script type="importmap">{ "imports": { "three": "/static/vendor/three.module.min.js" } }</script>
+<script type="module" src="/static/scene3d.js?v={{UI_VERSION}}"></script>
 </body>
 </html>

@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corset controller — B · Pilot (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* B · Pilot. The view is the screen; controls sit on its edges on opaque plates. Night first.
+   Colour = meaning only: red fault, amber warning, cyan caution, green live/healthy, blue preview. */
+:root {
+  --font: "Barlow", "Segoe UI", system-ui, sans-serif; --cond: "Barlow Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --bar-h: 64px; --edge: 12px; --col-l: 244px; --col-r: 252px;
+}
+html[data-theme="night"] {
+  --bg: #050607; --plate: #101317; --plate-2: #1a1f25; --line: #3a434d; --ink: #f1f4f7; --muted: #a9b3bd;
+  --act-bg: #f1f4f7; --act-ink: #050607; --focus: #ffd23f;
+  --fault: #ff6b63; --fault-fill: #c62a20; --fault-ink: #ffffff;
+  --warn: #ffb224; --warn-fill: #ffb224; --warn-ink: #000000;
+  --caution: #5cc8f0; --caution-fill: #5cc8f0; --caution-ink: #000000;
+  --ok: #3ddc84; --preview: #82b4ff; --unknown: #8a949e;
+  --view-bg: #0b0e11; --view-ink: #f1f4f7; --view-muted: #9aa5b0; --view-grid: #1c2228; --view-reach: rgba(130,180,255,.09);
+  --view-reach-line: #4f6f96; --view-camera: #3ddc84; --view-model: #f1f4f7; --view-target: #ff6b63; --view-rod: #ff8a1f;
+  --view-near: rgba(255,178,36,.30); --view-hit: rgba(255,107,99,.48); --view-path: #ff6b63; --view-preview: #82b4ff;
+  --view-arm: #dfe5ea; --view-arm-cam: #3ddc84; --view-pad: #ffb224;
+  color-scheme: dark;
+}
+html[data-theme="day"] {
+  --bg: #c4cad0; --plate: #ffffff; --plate-2: #eef1f4; --line: #7d8792; --ink: #0a0c0e; --muted: #434c55;
+  --act-bg: #0a0c0e; --act-ink: #ffffff; --focus: #0047ff;
+  --fault: #b3221a; --fault-fill: #c4271d; --fault-ink: #ffffff;
+  --warn: #7a4d00; --warn-fill: #f2a100; --warn-ink: #000000;
+  --caution: #0a5f80; --caution-fill: #0f6f96; --caution-ink: #ffffff;
+  --ok: #0a7a36; --preview: #1a55c9; --unknown: #5d6670;
+  --view-bg: #e9edf1; --view-ink: #0a0c0e; --view-muted: #4f5964; --view-grid: #d3d9df; --view-reach: rgba(26,85,201,.08);
+  --view-reach-line: #6d86a8; --view-camera: #0a7a36; --view-model: #0a0c0e; --view-target: #c4271d; --view-rod: #c45f00;
+  --view-near: rgba(242,161,0,.32); --view-hit: rgba(196,39,29,.40); --view-path: #c4271d; --view-preview: #1a55c9;
+  --view-arm: #2b3138; --view-arm-cam: #0a7a36; --view-pad: #9a6200;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 15px/1.35 var(--font); overflow: hidden; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.num { font-family: var(--cond); font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: .01em; }
+.k { font: 600 12px/1.2 var(--cond); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+[hidden] { display: none !important; }
+
+/* ---------- controls ---------- */
+.btn { min-height: 44px; min-width: 44px; padding: 0 14px; border: 1.5px solid var(--line); background: var(--plate-2); border-radius: 3px;
+       font: 700 15px/1 var(--cond); text-transform: uppercase; letter-spacing: .04em; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:hover:not(:disabled) { border-color: var(--ink); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .42; cursor: not-allowed; }
+.btn.act { background: var(--act-bg); color: var(--act-ink); border-color: var(--act-bg); }
+.btn.ghost { background: transparent; }
+.btn.danger { background: var(--fault-fill); color: var(--fault-ink); border-color: var(--fault-fill); }
+.btn[aria-pressed="true"] { background: var(--act-bg); color: var(--act-ink); border-color: var(--act-bg); }
+.btn.wide { width: 100%; }
+.btn.tall { min-height: 52px; font-size: 17px; }
+input[type=number], select { min-height: 44px; background: var(--plate-2); border: 1.5px solid var(--line); border-radius: 3px; padding: 0 8px; }
+input[type=number] { font-family: var(--cond); font-weight: 600; font-size: 18px; font-variant-numeric: tabular-nums; width: 100%; }
+input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--ink); margin: 0; flex: none; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+input[type=range] { width: 100%; height: 44px; accent-color: var(--ink); margin: 0; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+/* ---------- app frame ---------- */
+.app { position: fixed; inset: var(--sim-h, 0px) 0 0 0; display: grid; grid-template-rows: var(--bar-h) 1fr; }
+.bar { display: flex; align-items: center; gap: 10px; padding: 0 var(--edge); background: var(--plate); border-bottom: 1.5px solid var(--line); min-width: 0; z-index: 30; }
+.bar .grow { flex: 1; min-width: 0; }
+.blk { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.blk b { font: 700 16px/1.15 var(--cond); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.blk span:last-child { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conn { display: flex; align-items: center; gap: 9px; min-width: 0; max-width: 240px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--unknown); }
+.dot.ok { background: var(--ok); } .dot.fault { background: var(--fault); }
+.sim-tag { display: inline-block; font: 700 12px/1 var(--cond); letter-spacing: .08em; text-transform: uppercase; border: 1.5px solid currentColor; padding: 1px 4px; color: var(--ink); margin-left: 6px; vertical-align: 1px; }
+.brk { display: none; }
+.mode { max-width: 280px; flex: 1 1 200px; }
+.speed { display: grid; grid-template-columns: auto 120px auto; align-items: center; gap: 8px; }
+.speed output { min-width: 66px; font-size: 17px; }
+.sum { min-height: 44px; padding: 0 12px; border: 1.5px solid var(--line); background: var(--plate-2); border-radius: 3px; cursor: pointer;
+       display: inline-flex; align-items: center; gap: 10px; font: 700 14px/1 var(--cond); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.sum .c { display: inline-flex; align-items: center; gap: 4px; }
+.sum .c.fault { color: var(--fault); } .sum .c.warning { color: var(--warn); } .sum .c.caution { color: var(--caution); } .sum .c.ok { color: var(--ok); }
+.sum .c.notice { color: var(--muted); }
+.hold, .off { min-height: 48px; padding: 4px 14px; border-radius: 3px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
+.hold { background: var(--plate-2); border: 2px solid var(--ink); }
+.off { background: var(--fault-fill); color: var(--fault-ink); border: 2px solid var(--fault-fill); min-width: 150px; }
+.hold b, .off b { font: 700 17px/1 var(--cond); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.hold small, .off small { font: 500 12px/1.2 var(--font); opacity: .92; white-space: nowrap; }
+.hold:disabled { opacity: .45; cursor: not-allowed; }
+.ico { width: 18px; height: 18px; flex: none; vertical-align: -3px; }
+
+/* ---------- stage: view + edge plates ---------- */
+.stage { position: relative; overflow: hidden; background: var(--view-bg); }
+canvas.main { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+canvas.main.diagram { left: calc(var(--col-l) + 2 * var(--edge)); width: calc(100% - var(--col-l) - var(--col-r) - 4 * var(--edge)); }
+canvas.main.click { cursor: crosshair; }
+canvas.main.orbit { cursor: grab; }
+.hud { position: absolute; inset: 0; padding: 6px var(--edge) var(--edge); display: grid; gap: var(--edge); pointer-events: none;
+       grid-template-columns: var(--col-l) minmax(0, 1fr) var(--col-r); grid-template-rows: auto minmax(0, 1fr) auto;
+       grid-template-areas: "tele banners views" "tele . move" "joy center move"; }
+.hud > * { pointer-events: auto; }
+.plate { background: var(--plate); border: 1.5px solid var(--line); border-radius: 4px; padding: 10px 12px; min-width: 0; }
+.plate h2 { margin: 0; font: 700 14px/1.2 var(--cond); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.phead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; min-height: 24px; }
+.tag { font: 700 12px/1 var(--cond); text-transform: uppercase; letter-spacing: .06em; padding: 4px 6px; border-radius: 2px; border: 1.5px solid currentColor; white-space: nowrap; }
+.tag.ok { color: var(--ok); } .tag.fault { color: var(--fault); } .tag.warning { color: var(--warn); } .tag.caution { color: var(--caution); }
+.tag.unknown { color: var(--unknown); border-style: dashed; } .tag.preview { color: var(--preview); } .tag.neutral { color: var(--muted); }
+.tag.solid.fault { background: var(--fault-fill); color: var(--fault-ink); border-color: var(--fault-fill); }
+
+/* telemetry plate */
+.tele { grid-area: tele; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.trow { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 1px 8px; padding: 5px 0; border-top: 1px solid var(--line); }
+.trow .sub:empty { display: none; }
+.trow:first-of-type { border-top: 0; }
+.trow .lab { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.trow .val { font-size: 22px; line-height: 1.05; text-align: right; white-space: nowrap; }
+.trow .sub { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.trow.stale .val { color: var(--unknown); }
+.glyph { width: 12px; height: 12px; border-radius: 50%; flex: none; display: inline-block; }
+.glyph.cam { background: var(--view-camera); } .glyph.mod { border: 2.5px solid var(--view-model); } .glyph.rod { border-radius: 2px; background: var(--view-rod); width: 14px; height: 6px; }
+.clr-ok { color: var(--ok); } .clr-warn { color: var(--warn); } .clr-fault { color: var(--fault); } .clr-unk { color: var(--unknown); }
+
+/* banners */
+.banners { grid-area: banners; display: flex; flex-direction: column; gap: 6px; align-items: center; min-width: 0; }
+.banner { width: min(100%, 600px); display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 8px 10px; border-radius: 3px; border: 2px solid; }
+.banner.fault { background: var(--fault-fill); border-color: var(--fault-fill); color: var(--fault-ink); }
+.banner.warning { background: var(--warn-fill); border-color: var(--warn-fill); color: var(--warn-ink); }
+.banner.acked { background: var(--plate); color: var(--ink); padding: 4px 8px; }
+.banner.acked.fault { border-color: var(--fault); } .banner.acked.warning { border-color: var(--warn); }
+.banner .lvl { grid-row: span 2; display: flex; align-items: flex-start; padding-top: 2px; }
+.banner .t { font: 700 16px/1.2 var(--cond); letter-spacing: .02em; }
+.banner .t .src { text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
+.banner .m { font-size: 14px; }
+.banner .row { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.banner .row .btn { min-height: 44px; background: transparent; border-color: currentColor; color: inherit; }
+.banner.acked .row { margin-top: 0; }
+.banner.acked .m { display: none; }
+.banner .ackd { font: 600 13px/1 var(--cond); text-transform: uppercase; letter-spacing: .05em; align-self: center; }
+.more { font-size: 14px; background: var(--plate); border: 1.5px solid var(--line); padding: 6px 10px; border-radius: 3px; min-height: 44px; cursor: pointer; }
+.pickbar { width: min(100%, 600px); display: flex; align-items: center; gap: 10px; justify-content: space-between; border-color: var(--preview); }
+.pickbar b { font: 700 16px/1.2 var(--cond); text-transform: uppercase; letter-spacing: .04em; color: var(--preview); }
+
+/* views plate (inset + switch) */
+.views { grid-area: views; align-self: start; display: flex; flex-direction: column; gap: 8px; }
+.inset { position: relative; width: 100%; aspect-ratio: 16 / 10; border: 1.5px solid var(--line); border-radius: 3px; overflow: hidden; cursor: pointer; padding: 0; background: var(--view-bg); }
+.inset canvas { width: 100%; height: 100%; display: block; }
+.inset .cap { position: absolute; left: 0; bottom: 0; background: var(--plate); padding: 3px 7px; font: 700 12px/1.2 var(--cond); text-transform: uppercase; letter-spacing: .06em; border-top-right-radius: 3px; }
+.vswitch { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.vswitch .btn { padding: 0 4px; font-size: 14px; }
+.legend { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+
+/* joystick plate */
+.joy { grid-area: joy; align-self: end; display: flex; flex-direction: column; gap: 8px; }
+.stickwrap { display: grid; grid-template-columns: 124px minmax(0, 1fr); gap: 10px; align-items: center; }
+#stick { width: 124px; height: 124px; touch-action: none; cursor: grab; display: block; }
+#stick.dragging { cursor: grabbing; }
+.padstate { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pad { font-size: 13px; color: var(--muted); line-height: 1.3; }
+.pad b { color: var(--ink); font-weight: 600; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.joymsg { font-size: 14px; min-height: 1.35em; }
+.joymsg.warn { color: var(--warn); }
+.help { font-size: 14px; color: var(--ink); background: var(--plate-2); border: 1px solid var(--line); padding: 8px 10px; border-radius: 3px; }
+.help p { margin: 0 0 6px; } .help p:last-child { margin: 0; }
+
+/* move plate */
+.move { grid-area: move; align-self: end; display: flex; flex-direction: column; gap: 8px; }
+.why { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+
+/* centre bottom: movement status + dock */
+.center { grid-area: center; align-self: end; display: flex; flex-direction: column; gap: 8px; align-items: center; min-width: 0; }
+.status { width: min(100%, 600px); display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: center; }
+.status .msg { font-size: 15px; min-width: 0; }
+.status .meta { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.status.preview { border-color: var(--preview); } .status.moving { border-color: var(--ink); }
+.status.failed { border-color: var(--fault); } .status.limited { border-color: var(--warn); }
+.dock { display: flex; align-items: center; gap: 8px; padding: 6px; }
+.mini { display: grid; grid-template-columns: repeat(2, 44px); grid-template-rows: repeat(2, 44px); gap: 3px; }
+.mini button { border: 1.5px solid var(--line); background: var(--plate-2); border-radius: 2px; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; gap: 3px;
+               font: 700 15px/1 var(--cond); min-height: 0; }
+.mini button.fault { background: var(--fault-fill); color: var(--fault-ink); border-color: var(--fault-fill); }
+.mini button.warning { background: var(--warn-fill); color: var(--warn-ink); border-color: var(--warn-fill); }
+.mini button.caution { color: var(--caution); border-color: var(--caution); }
+.mini button.unknown { color: var(--unknown); border-style: dashed; }
+.mini button .ico { width: 13px; height: 13px; }
+
+/* camera note on the view */
+.viewnote { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 2; text-align: center; padding: 12px 16px; max-width: 360px; pointer-events: none; }
+.viewnote b { display: block; font: 700 18px/1.2 var(--cond); text-transform: uppercase; letter-spacing: .04em; }
+.viewnote span { font-size: 14px; color: var(--muted); }
+.framechip { position: absolute; z-index: 2; left: 50%; transform: translateX(-50%); bottom: 50%; }
+
+/* ---------- bottom sheet ---------- */
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 64%; z-index: 20; background: var(--plate); border-top: 2px solid var(--ink);
+         display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.sheethead { display: flex; align-items: center; gap: 10px; padding: 6px var(--edge); border-bottom: 1.5px solid var(--line); flex-wrap: wrap; }
+.tabs { display: flex; gap: 4px; }
+.sheethead .note { flex: 1; min-width: 200px; font-size: 13px; color: var(--muted); }
+.sheetbody { overflow: auto; padding: 12px var(--edge) 16px; }
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: rise .16s ease-out; } @keyframes rise { from { transform: translateY(24px); opacity: .6; } } }
+
+/* motors */
+.mgrid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; }
+.mmap { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; align-content: start; }
+.tile { text-align: left; border: 1.5px solid var(--line); background: var(--plate-2); border-radius: 3px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; min-height: 104px; }
+.tile[aria-pressed="true"] { border: 3px solid var(--ink); padding: 6.5px 8.5px; }
+.tile .h { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.tile .h b { font: 700 17px/1 var(--cond); text-transform: uppercase; letter-spacing: .03em; }
+.tile .st { font: 700 13px/1.15 var(--cond); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 4px; }
+.tile .st.fault { color: var(--fault); } .tile .st.warning { color: var(--warn); } .tile .st.caution { color: var(--caution); } .tile .st.ok { color: var(--ok); }
+.tile .st.unknown, .tile .st.neutral { color: var(--muted); }
+.tile .v { font-size: 22px; line-height: 1.05; }
+.tile .s { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tile.fault { border-color: var(--fault); }
+.mmap .pairs { grid-column: 1 / -1; font-size: 13px; color: var(--muted); margin: 2px 0 0; }
+.mhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.mhead h3 { margin: 0; font: 700 22px/1 var(--cond); text-transform: uppercase; letter-spacing: .03em; }
+.switch { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 1.5px solid var(--line); border-radius: 3px; background: var(--plate-2); cursor: pointer; margin-left: auto;
+          font: 700 15px/1 var(--cond); text-transform: uppercase; letter-spacing: .04em; }
+.switch .track { width: 40px; height: 22px; border-radius: 11px; border: 2px solid var(--muted); position: relative; }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); }
+.switch[aria-checked="true"] .track { border-color: var(--ok); background: var(--ok); }
+.switch[aria-checked="true"] .track::after { left: 20px; background: var(--plate); }
+.switch:disabled { opacity: .45; cursor: not-allowed; }
+.malert { border: 2px solid var(--fault); border-left-width: 8px; padding: 8px 10px; margin-bottom: 8px; border-radius: 3px; }
+.malert.warning { border-color: var(--warn); } .malert.caution { border-color: var(--caution); } .malert.notice { border-color: var(--muted); }
+.malert b { font: 700 16px/1.2 var(--cond); }
+.malert p { margin: 3px 0 0; font-size: 14px; }
+.malert .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.slider-row { display: grid; grid-template-columns: 1fr; gap: 0; margin: 6px 0; }
+.rl { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rl .clamp { color: var(--warn); font-weight: 600; }
+.jog { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; margin: 6px 0; }
+.jog .field { width: 110px; }
+.acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.tel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin: 8px 0 0; border-top: 1px solid var(--line); }
+.tel div { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); }
+.tel dt { font: 600 12px/1.2 var(--cond); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.tel dd { margin: 2px 0 0; font-size: 20px; }
+details.eng { margin-top: 10px; }
+details summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font: 700 14px/1 var(--cond); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+details.eng dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
+details.eng dd { font-size: 16px; }
+
+/* setup */
+.sgrid { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; }
+.snav { display: flex; flex-direction: column; gap: 4px; }
+.snav .btn { justify-content: flex-start; text-align: left; }
+.ssec h3 { margin: 0 0 4px; font: 700 20px/1.1 var(--cond); text-transform: uppercase; letter-spacing: .03em; }
+.ssec p.lead { margin: 0 0 10px; font-size: 14px; color: var(--muted); max-width: 70ch; }
+.ssec .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; max-width: 760px; align-items: end; }
+.ssec .rowb { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; align-items: center; }
+.msel { display: flex; gap: 4px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 15px; margin: 6px 0; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; }
+.ssec code, .ssec pre { font-family: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; }
+.ssec pre { background: var(--plate-2); border: 1px solid var(--line); padding: 8px 10px; border-radius: 3px; white-space: pre-wrap; margin: 6px 0; }
+.ssec ul { margin: 6px 0; padding-left: 20px; } .ssec li { margin: 3px 0; font-size: 14px; }
+.diag { width: 100%; border-collapse: collapse; font-size: 14px; }
+.diag td, .diag th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.diag th { font: 600 12px/1.2 var(--cond); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+
+/* alerts drawer */
+.drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100%); z-index: 25; background: var(--plate); border-left: 2px solid var(--ink);
+          display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.drawer .dh { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px var(--edge); border-bottom: 1.5px solid var(--line); }
+.drawer h2 { margin: 0; font: 700 18px/1 var(--cond); text-transform: uppercase; letter-spacing: .05em; }
+.drawer .list { overflow: auto; padding: 10px var(--edge); display: flex; flex-direction: column; gap: 10px; }
+.al { border: 2px solid var(--line); border-left-width: 8px; border-radius: 3px; padding: 8px 10px; }
+.al.fault { border-color: var(--fault); } .al.warning { border-color: var(--warn); } .al.caution { border-color: var(--caution); } .al.notice { border-color: var(--muted); }
+.al .lv { font: 700 13px/1 var(--cond); text-transform: uppercase; letter-spacing: .07em; display: flex; align-items: center; gap: 6px; }
+.al.fault .lv { color: var(--fault); } .al.warning .lv { color: var(--warn); } .al.caution .lv { color: var(--caution); } .al.notice .lv { color: var(--muted); }
+.al h3 { margin: 4px 0 2px; font: 700 17px/1.2 var(--cond); }
+.al p { margin: 2px 0; font-size: 14px; }
+.al dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0; font-size: 14px; }
+.al dt { color: var(--muted); } .al dd { margin: 0; font-variant-numeric: tabular-nums; }
+.al .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; align-items: center; }
+.al .ackd { font: 600 13px/1 var(--cond); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.al details summary { min-height: 44px; font-size: 13px; }
+.al code { font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.empty { color: var(--muted); font-size: 15px; }
+
+/* toast + dialog */
+.toast { position: absolute; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(var(--edge) + 4px); width: min(560px, calc(100% - 24px));
+         background: var(--plate); border: 2px solid var(--fault); border-left-width: 8px; border-radius: 3px; padding: 8px 10px; display: flex; gap: 10px; align-items: center; }
+.toast span { flex: 1; font-size: 15px; }
+.modal { position: fixed; inset: 0; z-index: 9500; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: 16px; }
+.dialog { width: min(460px, 100%); background: var(--plate); border: 2px solid var(--ink); border-radius: 4px; padding: 16px; }
+.dialog h2 { margin: 0 0 8px; font: 700 21px/1.15 var(--cond); text-transform: uppercase; letter-spacing: .03em; }
+.dialog p { margin: 0 0 14px; font-size: 16px; }
+.dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1100px) {
+  .bar { gap: 8px; } .mode { max-width: 200px; } .speed { grid-template-columns: auto 92px auto; } .speed .k { display: none; }
+  .conn { max-width: 190px; }
+}
+@media (max-width: 1100px) and (orientation: landscape) { :root { --col-l: 232px; --col-r: 240px; } }
+/* portrait tablet: edges move to top and bottom */
+@media (orientation: portrait) {
+  :root { --bar-h: 116px; }
+  .bar { flex-wrap: wrap; align-content: center; row-gap: 8px; }
+  .bar .grow { display: none; }
+  .brk { display: block; flex-basis: 100%; height: 0; order: 2; }
+  .conn { max-width: none; flex: 1 1 30%; } .mode { max-width: none; flex: 1 1 30%; } .sum { order: 1; }
+  .speed { order: 3; flex: 1 1 auto; grid-template-columns: auto minmax(80px, 1fr) auto; } .speed .k { display: inline; } .hold { order: 3; } .off { order: 3; }
+  .hud { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto;
+         grid-template-areas: "tele views" "banners banners" "center center" "joy move"; }
+  .banners { grid-area: banners; align-self: start; }
+  .tele { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; align-content: start; }
+  .tele .phead { grid-column: 1 / -1; }
+  .tele #rowRod { grid-column: 1 / -1; }
+  .tele .trow:nth-of-type(2) { border-top: 0; }
+  .views { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
+  .views .vswitch { grid-template-columns: 1fr 1fr; }
+  .views .legend { display: none; }
+  .center { flex-direction: row; align-items: stretch; }
+  .center .status { flex: 1; width: auto; }
+  canvas.main.diagram { left: 0; width: 100%; top: var(--top-cut, 300px); height: calc(100% - var(--top-cut, 300px) - var(--bot-cut, 420px)); }
+  .sheet { height: 72%; }
+  .mgrid, .sgrid { grid-template-columns: 1fr; }
+  .mmap { max-width: 520px; }
+  .snav { flex-direction: row; flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar" id="bar">
+    <div class="conn"><span class="dot" id="connDot" aria-hidden="true"></span>
+      <div class="blk"><b id="connText">—</b><span id="connSub">—</span></div></div>
+    <div class="blk mode" aria-live="polite"><b id="modeText">—</b><span id="modeSub">—</span></div>
+    <label class="speed"><span class="k">Speed</span><input type="range" id="speed" min="5" max="200" step="5" aria-describedby="speedVal">
+      <output class="num" id="speedVal" for="speed">—</output></label>
+    <span class="grow"></span><span class="brk" aria-hidden="true"></span>
+    <button class="sum" id="alertSum" aria-expanded="false" aria-controls="drawer"></button>
+    <button class="hold" id="hold" title="Every powered motor holds where it is now; also ends tip and joystick control">
+      <b>Hold all</b><small>freeze here</small></button>
+    <button class="off" id="off" title="Switches torque off on every motor: the arm goes limp and nothing holds position. Esc does the same.">
+      <b>Torque off all</b><small>release all · Esc</small></button>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas class="main" id="mainView" role="img" aria-label="Main view"></canvas>
+    <div class="plate viewnote" id="viewNote" hidden></div>
+    <span class="tag warning framechip" id="frameChip" hidden></span>
+
+    <div class="hud" id="hud">
+      <!-- left edge, top: where the tip is, and the rod -->
+      <section class="plate tele" aria-labelledby="teleH">
+        <div class="phead"><h2 id="teleH">Tip</h2><span class="tag" id="feedTag">—</span></div>
+        <div class="trow" id="rowCam"><span class="lab"><i class="glyph cam" aria-hidden="true"></i>Camera x · z</span><span class="val num" id="tCam">—</span><span class="sub"></span></div>
+        <div class="trow" id="rowMod"><span class="lab"><i class="glyph mod" aria-hidden="true"></i>Model (motors)</span><span class="val num" id="tMod">—</span><span class="sub"></span></div>
+        <div class="trow" id="rowY"><span class="lab" id="tYLab">Height y</span><span class="val num" id="tY">—</span><span class="sub"></span></div>
+        <div class="trow" id="rowBend"><span class="lab" id="tBendLab">Bend</span><span class="val num" id="tBend">—</span><span class="sub"></span></div>
+        <div class="trow" id="rowRod"><span class="lab"><i class="glyph rod" aria-hidden="true"></i>Rod clearance</span><span class="val num" id="tClr">—</span><span class="sub" id="tClrSub"></span></div>
+      </section>
+
+      <div class="banners" id="banners" aria-label="Active alerts"></div>
+
+      <!-- right edge, top: secondary view and view switch -->
+      <section class="plate views" aria-label="Views">
+        <button class="inset" id="inset" aria-label="Secondary view; press to swap with the main view"><canvas id="insetView"></canvas><span class="cap" id="insetCap">Top view · tap to swap</span></button>
+        <div class="vswitch" role="group" aria-label="Main view">
+          <button class="btn" data-view="camera" aria-pressed="false">Camera</button><button class="btn" data-view="top" aria-pressed="false">Top</button>
+          <button class="btn" data-view="side" aria-pressed="false">Side</button><button class="btn" data-view="3d" aria-pressed="false">3D</button>
+        </div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <!-- left edge, bottom: joystick -->
+      <section class="plate joy" aria-labelledby="joyH">
+        <div class="phead"><h2 id="joyH">Joystick</h2><span class="tag neutral" id="joyTag">Off</span>
+          <button class="btn ghost" id="joyHelpBtn" aria-expanded="false" aria-controls="joyHelp" style="min-width:44px;padding:0 10px" title="How the joystick works">?</button></div>
+        <div class="help" id="joyHelp" hidden>
+          <p><b>On-screen stick:</b> drag to move; let go and the arm holds where it is.</p>
+          <p><b>Gamepad:</b> left stick steers, hold <b>RT / R2</b> (or RB / R1) to move, <b>B / Circle</b> = torque off all.</p>
+          <p><b>Jog:</b> deflection sets speed; the target stays put when you let go. <b>Position:</b> deflection points at a spot (full = edge of reach).</p>
+        </div>
+        <div class="stickwrap">
+          <canvas id="stick" aria-label="On-screen stick: drag to move, release to hold. Numbers mark the motors."></canvas>
+          <div class="padstate">
+            <label class="field"><span class="k">Stick moves</span><select id="joyMode"><option value="tip">Tip</option><option value="bend">Motors</option></select></label>
+            <label class="field"><span class="k">Control</span><select id="joyControl"><option value="rate">Jog</option><option value="position">Position</option></select></label>
+          </div>
+        </div>
+        <div class="pad"><span class="k">Gamepad</span> <b id="padName">none</b> · <b id="padEnable">released</b></div>
+        <div class="two"><button class="btn act" id="joyStart">Start</button><button class="btn" id="joyStop">Stop joystick</button></div>
+        <div class="joymsg" id="joyMsg" aria-live="polite"></div>
+      </section>
+
+      <!-- centre bottom: what the arm is doing + dock -->
+      <div class="center">
+        <div class="plate status" id="status" aria-live="polite"><span class="tag" id="stTag">—</span><span class="msg" id="stMsg"></span><span class="meta" id="stMeta"></span></div>
+        <nav class="plate dock" aria-label="Panels">
+          <div class="mini" id="mini" role="group" aria-label="Motors as seen from above"></div>
+          <button class="btn" id="openMotors" aria-expanded="false" aria-controls="sheet">Motors</button>
+          <button class="btn" id="openSetup" aria-expanded="false" aria-controls="sheet">Setup</button>
+          <button class="btn ghost" id="themeBtn" aria-pressed="false" title="Day theme for bright light">Day</button>
+        </nav>
+      </div>
+
+      <!-- right edge, bottom: move the tip -->
+      <section class="plate move" aria-labelledby="moveH">
+        <div class="phead"><h2 id="moveH">Move tip</h2></div>
+        <div class="two">
+          <label class="field"><span class="k">Target X mm</span><input type="number" id="tx" step="1" inputmode="decimal"></label>
+          <label class="field"><span class="k">Target Z mm</span><input type="number" id="tz" step="1" inputmode="decimal"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="closed" checked> Correct with camera (closed loop)</label>
+        <label class="check"><input type="checkbox" id="clickMove" checked> Move when I click the top view</label>
+        <div class="two"><button class="btn" id="preview" title="Plan the path to X, Z without moving">Preview</button>
+          <button class="btn act tall" id="go" aria-describedby="goWhy">Move tip</button></div>
+        <button class="btn tall wide" id="tipStop" title="Ends the tip move; the arm holds where it is">Stop tip</button>
+        <div class="why" id="goWhy"></div>
+      </section>
+    </div>
+
+    <!-- bottom sheet: Motors / Setup -->
+    <section class="sheet" id="sheet" hidden aria-label="Motors and setup">
+      <div class="sheethead">
+        <div class="tabs" role="tablist" aria-label="Sheet">
+          <button class="btn" role="tab" id="tabMotors" aria-selected="true" aria-controls="pMotors">Motors</button>
+          <button class="btn" role="tab" id="tabSetup" aria-selected="false" aria-controls="pSetup">Setup</button>
+        </div>
+        <span class="note" id="sheetNote">Joystick and Move tip are under this sheet. Hold all and Torque off all stay in the top bar.</span>
+        <button class="btn" id="closeSheet">Close</button>
+      </div>
+      <div class="sheetbody">
+        <div id="pMotors" role="tabpanel" aria-labelledby="tabMotors">
+          <div class="mgrid">
+            <div class="mmap" id="mmap" role="group" aria-label="Motors, laid out as seen from above"></div>
+            <div id="mdetail">
+              <div class="mhead"><h3 id="mdTitle">Motor</h3><span id="mdTags" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+                <button class="switch" role="switch" id="mdTorque" aria-checked="false"><span class="track" aria-hidden="true"></span><span>Torque</span></button></div>
+              <div id="mdAlerts"></div>
+              <div class="slider-row">
+                <label class="k" for="mdSlider">Goal angle (° from calibrated zero)</label>
+                <input type="range" id="mdSlider" step="0.1">
+                <div class="rl"><span id="mdLo"></span><span class="clamp" id="mdClamp" hidden>at limit: command clamped</span><span id="mdHi"></span></div>
+              </div>
+              <div class="jog">
+                <button class="btn" data-jog="-5">−5°</button><button class="btn" data-jog="-1">−1°</button>
+                <button class="btn" data-jog="1">+1°</button><button class="btn" data-jog="5">+5°</button>
+                <label class="field"><span class="k">Target °</span><input type="number" id="mdTarget" step="0.1"></label>
+                <button class="btn act" id="mdGo">Go</button>
+              </div>
+              <div class="acts">
+                <button class="btn" id="mdZero" title="The current position becomes 0 (angle and cable displacement)">Calibrate: set 0 here</button>
+                <button class="btn ghost" id="mdLimits">Limits &amp; drum radius</button>
+              </div>
+              <dl class="tel">
+                <div><dt>Angle</dt><dd class="num" id="mdAngle">—</dd></div><div><dt>Goal</dt><dd class="num" id="mdGoal">—</dd></div>
+                <div><dt>Current (measured)</dt><dd class="num" id="mdCur">—</dd></div><div><dt>Temperature</dt><dd class="num" id="mdTemp">—</dd></div>
+                <div><dt>Velocity</dt><dd class="num" id="mdVel">—</dd></div><div><dt>Cable</dt><dd class="num" id="mdCable">—</dd></div>
+              </dl>
+              <details class="eng"><summary>Engineering details</summary>
+                <dl class="tel" id="mdEng"></dl></details>
+            </div>
+          </div>
+        </div>
+        <div id="pSetup" role="tabpanel" aria-labelledby="tabSetup" hidden>
+          <div class="sgrid">
+            <nav class="snav" aria-label="Setup sections" id="snav">
+              <button class="btn" data-sec="conn">Connection</button><button class="btn" data-sec="cal">Calibration &amp; limits</button>
+              <button class="btn" data-sec="model">Tip model</button><button class="btn" data-sec="obs">Obstacle</button>
+              <button class="btn" data-sec="joy">Joystick</button><button class="btn" data-sec="3d">3D view</button>
+              <button class="btn" data-sec="diag">Diagnostics</button>
+            </nav>
+            <div>
+              <section class="ssec" data-sec="conn">
+                <h3>Connection</h3><p class="lead">Serial link to the four motors. Connecting never moves anything.</p>
+                <dl class="kv"><dt>State</dt><dd id="scState">—</dd><dt>Last error</dt><dd id="scErr">—</dd></dl>
+                <div class="grid2"><label class="field"><span class="k">Serial port</span><select id="port"><option value="">auto (first FTDI)</option></select></label></div>
+                <div class="rowb"><button class="btn act" id="connect">Connect</button><button class="btn" id="disconnect">Disconnect</button></div>
+              </section>
+              <section class="ssec" data-sec="cal" hidden>
+                <h3>Calibration &amp; limits</h3>
+                <p class="lead">Calibrate sets a motor's current position as its 0 (the taut zero tip control needs). It is a software offset; the motor itself is not changed. Soft limits are absolute angles.</p>
+                <div class="rowb"><button class="btn" id="calAll">Calibrate all…</button><span class="k">sets every motor's current position as 0</span></div>
+                <div class="rowb"><span class="k">Motor</span><div class="msel" role="group" aria-label="Motor to set up" id="calSel"></div></div>
+                <dl class="kv"><dt>Zero</dt><dd id="calZero">—</dd></dl>
+                <div class="grid2">
+                  <label class="field"><span class="k">Drum radius mm</span><input type="number" id="sRadius" step="0.1" min="0.1"></label>
+                  <label class="field"><span class="k">Soft min ° abs</span><input type="number" id="sMin" step="1"></label>
+                  <label class="field"><span class="k">Soft max ° abs</span><input type="number" id="sMax" step="1"></label>
+                  <label class="check"><input type="checkbox" id="sInvert"> Invert cable sign</label>
+                </div>
+                <div class="rowb"><button class="btn act" id="sSave">Save</button><button class="btn" id="sZero">Calibrate: set 0 here</button><button class="btn" id="sClear">Clear calibration</button></div>
+              </section>
+              <section class="ssec" data-sec="model" hidden>
+                <h3>Tip model</h3><div id="modelInfo"></div>
+              </section>
+              <section class="ssec" data-sec="obs" hidden>
+                <h3>Obstacle (rod)</h3>
+                <p class="lead">tip_feed.py finds an orange rod by itself (or the colour you pick) and measures it with the depth camera. Moves then keep the whole arm the set clearance from it — a modelled estimate, not a guarantee.</p>
+                <dl class="kv"><dt>Rod</dt><dd id="obsRod">—</dd><dt>Camera</dt><dd id="obsCam">—</dd></dl>
+                <div class="grid2">
+                  <label class="check"><input type="checkbox" id="obsAvoid"> Plan moves around it</label>
+                  <label class="field"><span class="k">Clearance mm (arm centreline to rod surface)</span><input type="number" id="obsClear" min="0" max="100" step="1"></label>
+                </div>
+                <div class="rowb"><button class="btn" id="obsPick">Pick rod colour</button><button class="btn" id="obsMark">Mark rod ends</button><button class="btn" id="obsForget">Forget rod</button></div>
+                <p class="lead" id="obsStatus"></p>
+                <p class="lead">Pick and Mark switch the main view to the camera and close this sheet; then click the rod (or its two ends). Marking works for any colour and stays until Forget rod.</p>
+              </section>
+              <section class="ssec" data-sec="joy" hidden>
+                <h3>Joystick</h3>
+                <p class="lead">Inversion applies to a physical gamepad's left stick. The on-screen stick always follows your finger.</p>
+                <div class="rowb"><label class="check"><input type="checkbox" id="invX"> Invert x</label><label class="check"><input type="checkbox" id="invY"> Invert y</label></div>
+                <ul>
+                  <li><b>Tip direction</b> maps the stick to a direction in the top view (needs the tip model). <b>Motor pairs</b>: push toward a motor to pull it; pairs 0/2 and 1/3 oppose.</li>
+                  <li>Mapping and control can only change while joystick control is off.</li>
+                  <li>A Bluetooth controller with a non-standard layout: hold <b>RB</b> to move.</li>
+                </ul>
+              </section>
+              <section class="ssec" data-sec="3d" hidden>
+                <h3>3D view</h3>
+                <div class="rowb">
+                  <label class="check"><input type="checkbox" id="o3cloud" checked> Camera point cloud</label>
+                  <label class="field" style="width:200px"><span class="k">Cloud within mm of the arm</span><input type="number" id="o3crop" value="250" disabled aria-describedby="cropNote"></label>
+                  <span class="k" id="cropNote">simulated cloud: no crop</span>
+                </div>
+                <div class="rowb">
+                  <label class="check"><input type="checkbox" id="o3surface" checked> Tip surface</label>
+                  <label class="check"><input type="checkbox" id="o3zone" checked> Clearance zone</label>
+                  <label class="check"><input type="checkbox" id="o3armcam" checked> Arm from camera</label>
+                  <label class="check"><input type="checkbox" id="o3path" checked> Planned path</label>
+                </div>
+                <div class="rowb"><span class="k">Camera</span><button class="btn" data-preset="front">Front</button><button class="btn" data-preset="top">Top</button><button class="btn" data-preset="camera">Camera's view</button>
+                  <button class="btn" id="playPath">Play path</button></div>
+                <p class="lead">In the 3D view: drag to orbit, scroll to zoom, double-click the tip surface to <b>preview</b> a path there. A preview never moves the arm; Move tip does.</p>
+              </section>
+              <section class="ssec" data-sec="diag" hidden>
+                <h3>Diagnostics</h3>
+                <table class="diag"><thead><tr><th>Level</th><th>Source</th><th>Condition</th><th>Raw</th></tr></thead><tbody id="diagRows"></tbody></table>
+                <h3 style="margin-top:14px">Engineering notes</h3>
+                <ul>
+                  <li>Angles follow emioapi: angle = (2048 − pulse) × 2π / 4096 until calibrated; then relative to the calibrated 0.</li>
+                  <li>Cable displacement = (angle − zero) × drum radius (sign inverted if set).</li>
+                  <li>Goals are clamped to the soft limits and the motor's firmware limits.</li>
+                  <li>Moves follow the pair rules: 0/2 and 1/3 oppose; only one of each pair pulls; a cable is released before its opposite pulls. Above 1000 mA a pulling motor backs off; above 1100 mA everything is released (backend limits).</li>
+                  <li>Close Emio Labs / SOFA first: a running scene overrides the motors.</li>
+                </ul>
+                <h3 style="margin-top:14px">Commands</h3>
+                <pre>~/emio-venv/bin/python tip_feed.py          # camera feed, rod detection, point cloud
+~/emio-venv/bin/python fit_tip_model.py data/tip_&lt;time&gt;.csv
+cd motor_gui &amp;&amp; docker compose up -d --build</pre>
+                <p class="lead">This prototype is simulated: commands go to the SIMULATION log at the top, never to hardware.</p>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- alerts drawer -->
+    <aside class="drawer" id="drawer" hidden aria-labelledby="drawerH">
+      <div class="dh"><h2 id="drawerH" tabindex="-1">Alerts</h2><button class="btn" id="closeDrawer">Close</button></div>
+      <div class="list" id="alertList"></div>
+    </aside>
+
+    <div class="toast" id="toast" role="alert" hidden><span id="toastMsg"></span><button class="btn" id="toastClose">Dismiss</button></div>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlgT" aria-describedby="dlgD">
+    <h2 id="dlgT"></h2><p id="dlgD"></p>
+    <div class="row"><button class="btn" id="dlgCancel">Cancel</button><button class="btn act" id="dlgOk">Confirm</button></div>
+  </div>
+</div>
+<div class="sr" aria-live="assertive" id="liveA"></div><div class="sr" aria-live="polite" id="liveP"></div>
+
+<script src="shared/sim.js"></script>
+<script src="shared/views.js"></script>
+<script src="shared/harness.js"></script>
+<script src="dir-2.js"></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corset controller — six candidates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Barlow:wght@400;600;700&family=Barlow+Condensed:wght@500;600;700&family=Archivo:wght@400;600;800&family=Archivo+Narrow:wght@500;700&family=Schibsted+Grotesk:wght@400;600&family=Newsreader:opsz,wght@6..72,500&family=Instrument+Sans:wght@400;600&family=Caveat:wght@600&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #16181b; --paper: #efeeea; --muted: #5d636b; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: #e2e1dc; color: var(--ink); font: 15px/1.45 "Instrument Sans", system-ui, sans-serif; }
+  main { max-width: 1560px; margin: 0 auto; padding: 28px 24px 40px; }
+  h1 { font: 600 20px/1.2 "Instrument Sans", sans-serif; margin: 0 0 4px; }
+  p.lead { margin: 0 0 22px; color: var(--muted); max-width: 70ch; }
+  .grid { display: grid; grid-template-columns: repeat(3, 480px); gap: 26px 22px; justify-content: center; }
+  figure { margin: 0; }
+  .t { width: 480px; height: 300px; overflow: hidden; position: relative; border: 1px solid #c9c7c0; }
+  figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  figcaption b { color: var(--ink); }
+  .pick { color: #0b6b2e; font-weight: 600; }
+  svg { display: block; }
+  /* A · ward monitor */
+  .a { background: #f3f1ec; font-family: "Atkinson Hyperlegible Next", sans-serif; color: #15171a; }
+  .a .bar { height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 1px solid #cfccc4; font-size: 10px; white-space: nowrap; }
+  .a .bar .sp { flex: 1 } .a .bar .hold { border: 1.5px solid #15171a; padding: 3px 7px; font-weight: 700 }
+  .a .bar .off { background: #b3261e; color: #fff; padding: 4px 8px; font-weight: 700 }
+  .a .alarm { height: 26px; display: flex; font-size: 11px; font-weight: 700; }
+  .a .alarm div { padding: 6px 10px } .a .alarm .r { background: #b3261e; color: #fff; flex: 1.2 } .a .alarm .y { background: #f2c230; flex: 1 }
+  .a .body { display: grid; grid-template-columns: 1fr 168px; height: 244px; }
+  .a .view { border-right: 1px solid #cfccc4; position: relative }
+  .a .rows div { display: flex; justify-content: space-between; align-items: baseline; padding: 5px 10px; border-bottom: 1px solid #dedbd3; font-size: 10px; color: #5d636b }
+  .a .rows b { font: 600 19px "Atkinson Hyperlegible Mono", monospace; color: #15171a } .a .rows .bad b { color: #b3261e }
+  /* B · pilot */
+  .b { background: #0b0d0f; font-family: "Barlow", sans-serif; color: #e9edf1; }
+  .b .hud { position: absolute; left: 0; right: 0; top: 0; height: 28px; display: flex; align-items: center; gap: 10px; padding: 0 10px; background: #000; font-size: 11px; font-weight: 600 }
+  .b .hud .sp { flex: 1 } .b .hud .off { background: #e5484d; color: #000; padding: 4px 8px; font-weight: 700 }
+  .b .ban { position: absolute; top: 36px; left: 50%; transform: translateX(-50%); background: #ffb224; color: #000; font: 700 11px "Barlow Condensed"; padding: 5px 12px }
+  .b .pip { position: absolute; right: 10px; top: 70px; width: 120px; height: 80px; border: 2px solid #e9edf1; background: #1a1f24 }
+  .b .stick { position: absolute; left: 14px; bottom: 14px; width: 92px; height: 92px; border-radius: 50%; border: 2px solid #8b96a1; background: rgba(0,0,0,.55) }
+  .b .stick i { position: absolute; left: 34px; top: 22px; width: 26px; height: 26px; border-radius: 50%; background: #3ddc84 }
+  .b .go { position: absolute; right: 12px; bottom: 14px; display: grid; gap: 6px; }
+  .b .go span { display: block; width: 104px; padding: 9px 0; text-align: center; font: 700 12px "Barlow Condensed"; background: #e9edf1; color: #000 }
+  .b .go span.s { background: #000; color: #e9edf1; border: 1.5px solid #e9edf1 }
+  .b .tele { position: absolute; left: 14px; top: 40px; font: 600 12px "Barlow"; line-height: 1.6; text-shadow: 0 1px 0 #000 }
+  .b .tele b { font: 700 18px "Barlow Condensed"; font-variant-numeric: tabular-nums }
+  /* C · floor plan (Aicher) */
+  .c { background: #fff; font-family: "Archivo", sans-serif; color: #000; display: grid; grid-template-columns: 44px 1fr 150px; grid-template-rows: 30px 1fr; }
+  .c .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-bottom: 2px solid #000; font: 700 10px "Archivo Narrow" }
+  .c .top .sp { flex: 1 } .c .top .off { background: #d6001c; color: #fff; padding: 4px 7px } .c .top .hold { border: 2px solid #000; padding: 2px 6px }
+  .c .rail { border-right: 2px solid #000; display: grid; grid-auto-rows: 52px; }
+  .c .rail span { display: grid; place-items: center; border-bottom: 1px solid #000; font: 700 8px "Archivo Narrow" }
+  .c .rail span.on { background: #000; color: #fff }
+  .c .ctl { border-left: 2px solid #000; display: grid; grid-template-rows: 1fr 118px; }
+  .c .map { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 6px; border-top: 2px solid #000 }
+  .c .map div { display: grid; place-items: center; font: 800 26px "Archivo"; background: #f0f0f0 } .c .map .f { background: #d6001c; color: #fff }
+  .c .cmd { padding: 8px; display: grid; gap: 6px; align-content: start; font: 700 10px "Archivo Narrow" }
+  .c .cmd span { padding: 8px 6px; background: #0047bb; color: #fff } .c .cmd span.k { background: #fff; color: #000; border: 2px solid #000 }
+  /* D · faceplate (Rams) */
+  .d { background: #e4e2dd; font-family: "Schibsted Grotesk", sans-serif; color: #222; }
+  .d .view { position: absolute; left: 14px; right: 14px; top: 14px; height: 170px; background: #f4f3ef; border: 1px solid #c8c5bd }
+  .d .strip { position: absolute; left: 14px; right: 14px; bottom: 14px; height: 92px; display: grid; grid-template-columns: repeat(4, 1fr) 90px; gap: 10px; }
+  .d .dial { background: #f4f3ef; border: 1px solid #c8c5bd; position: relative; font-size: 9px; padding: 6px }
+  .d .dial b { display: block; font: 600 17px "Schibsted Grotesk"; font-variant-numeric: tabular-nums; margin-top: 30px }
+  .d .act { background: #e2541a; border-radius: 50%; width: 70px; height: 70px; align-self: center; justify-self: center; display: grid; place-items: center; color: #fff; font-size: 9px; font-weight: 600 }
+  /* E · warm editorial */
+  .e { background: #f4eee3; font-family: "Instrument Sans", sans-serif; color: #2b241d; padding: 18px 20px; }
+  .e h2 { font: 500 25px/1.1 "Newsreader", serif; margin: 0 0 10px; max-width: 15ch }
+  .e .cols { display: grid; grid-template-columns: 1fr 190px; gap: 16px } .e .k { font-size: 10px; color: #8a7a68; border-top: 1px solid #d8cdbb; padding-top: 6px; margin-top: 6px }
+  .e .k b { display: block; font: 500 18px "Newsreader", serif; color: #2b241d } .e .btn { margin-top: 10px; display: inline-block; background: #b5532c; color: #fff; padding: 7px 12px; font-size: 11px }
+  /* F · annotated plate */
+  .f { background: #fff; font-family: "Archivo Narrow", sans-serif; color: #111; display: grid; grid-template-columns: 1.2fr 1fr; }
+  .f .l { padding: 12px; border-right: 3px solid #111; position: relative } .f .l h3 { margin: 0; font: 700 20px "Archivo"; box-shadow: inset 0 -8px 0 #ffe14d; display: inline }
+  .f .note { position: absolute; font: 600 14px "Caveat", cursive; color: #d0302f }
+  .f .r { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: 1fr; }
+  .f .r div { border: 1.5px solid #111; margin: -0.75px; padding: 5px; font-size: 9px } .f .r b { display: block; font: 700 18px "Archivo"; }
+  .f .r .y { background: #ffe14d } .f .r .k { background: #111; color: #fff }
+</style>
+</head>
+<body>
+<main>
+  <h1>Corset effector controller: six candidates, Operate screen</h1>
+  <p class="lead">Same spec and data in each. The three marked "built" are full interactive prototypes
+    (<code>dir-1.html</code>, <code>dir-2.html</code>, <code>dir-3.html</code>); the other three are alternates you can ask
+    to see built. Simulated data.</p>
+  <div class="grid">
+    <figure>
+      <div class="t a">
+        <div class="bar"><b>Connected · simulated</b><span>Tip mode · moving</span><span>Speed 6.9 rpm</span><span class="sp"></span><span class="hold">Hold all</span><span class="off">TORQUE OFF ALL</span></div>
+        <div class="alarm"><div class="r">MOTOR 2 · Hardware error: overload</div><div class="y">Arm 9 mm from rod</div></div>
+        <div class="body">
+          <div class="view"><svg viewBox="0 0 312 244" width="312" height="244"><rect width="312" height="244" fill="#f3f1ec"/><path d="M60 122a96 96 0 1 0 192 0a96 96 0 1 0-192 0" fill="rgba(40,90,160,.08)" stroke="#8aa0bb"/><line x1="110" y1="60" x2="210" y2="160" stroke="#d26a00" stroke-width="8" stroke-linecap="round"/><circle cx="170" cy="96" r="6" fill="#14803c"/><circle cx="174" cy="92" r="7" fill="none" stroke="#15171a" stroke-width="2"/></svg></div>
+          <div class="rows"><div>Tip x, z (camera)<b>41, −17</b></div><div class="bad">Clearance (model)<b>9 mm</b></div><div>Motor 0<b>38.4°</b></div><div>Motor 1<b>0.0°</b></div><div class="bad">Motor 2<b>FAULT</b></div><div>Motor 3<b>12.1°</b></div></div>
+        </div>
+      </div>
+      <figcaption><span class="pick">Built: dir-1</span> · <b>A · Ward monitor</b>. Real reference: Philips IntelliVue (alarm band, parameter rows). Light paper and ink, colour only for status.</figcaption>
+    </figure>
+    <figure>
+      <div class="t b">
+        <svg viewBox="0 0 480 300" width="480" height="300"><rect width="480" height="300" fill="#2a2724"/><g stroke="#4a453f"><line x1="0" y1="250" x2="480" y2="210"/><line x1="0" y1="280" x2="480" y2="240"/></g><path d="M240 40 C 238 120, 250 170, 286 214" stroke="#d9d4cc" stroke-width="16" fill="none" stroke-linecap="round"/><line x1="160" y1="120" x2="330" y2="150" stroke="#e2731c" stroke-width="10" stroke-linecap="round"/><circle cx="286" cy="214" r="8" fill="#2fbf4f"/></svg>
+        <div class="hud"><span>● CONNECTED · SIM</span><span>JOYSTICK · MOVING</span><span>6.9 rpm</span><span class="sp"></span><span>HOLD ALL</span><span class="off">TORQUE OFF ALL</span></div>
+        <div class="ban">CAMERA DATA STALE · 4.2 s</div>
+        <div class="tele">TIP (CAMERA)<br><b>41 · −17</b><br>CLEARANCE <b>38</b> mm</div>
+        <div class="pip"></div>
+        <div class="stick"><i></i></div>
+        <div class="go"><span>MOVE TIP</span><span class="s">STOP TIP</span></div>
+      </div>
+      <figcaption><span class="pick">Built: dir-2</span> · <b>B · Pilot</b>. Real reference: DJI Pilot 2. The view fills the screen, controls sit on the edges, other views in an inset. Night first.</figcaption>
+    </figure>
+    <figure>
+      <div class="t c">
+        <div class="top"><span>■ CONNECTED · SIM</span><span>TIP · IDLE</span><span>6.9 RPM</span><span class="sp"></span><span class="hold">HOLD ALL</span><span class="off">TORQUE OFF ALL</span></div>
+        <div class="rail"><span class="on">OPERATE</span><span>MOTORS</span><span>SETUP</span></div>
+        <div><svg viewBox="0 0 284 268" width="284" height="268"><rect width="284" height="268" fill="#fff"/><g stroke="#e3e3e3"><path d="M0 40h284M0 80h284M0 120h284M0 160h284M0 200h284M0 240h284M40 0v268M80 0v268M120 0v268M160 0v268M200 0v268M240 0v268"/></g><circle cx="142" cy="134" r="104" fill="none" stroke="#000" stroke-width="2"/><line x1="90" y1="80" x2="200" y2="180" stroke="#ff6a13" stroke-width="9"/><circle cx="168" cy="104" r="7" fill="#00843d"/></svg></div>
+        <div class="ctl"><div class="cmd"><span>MOVE TIP</span><span class="k">STOP TIP</span><span class="k">JOYSTICK</span></div>
+          <div class="map"><div>1</div><div>0</div><div class="f">2</div><div>3</div></div></div>
+      </div>
+      <figcaption><span class="pick">Built: dir-3</span> · <b>C · Floor plan</b>. Best designer: Otl Aicher. Systematic grid, pictograms and words, motors drawn in their physical layout from above.</figcaption>
+    </figure>
+    <figure>
+      <div class="t d">
+        <div class="view"></div>
+        <div class="strip"><div class="dial">MOTOR 1<b>0.0°</b></div><div class="dial">MOTOR 0<b>38.4°</b></div><div class="dial">MOTOR 2<b>—</b></div><div class="dial">MOTOR 3<b>12.1°</b></div><div class="act">MOVE</div></div>
+      </div>
+      <figcaption>Alternate · <b>D · Faceplate</b>. Best designer: Dieter Rams. Instrument calm with one action colour. Too close to C in temperament, and weak at alarms.</figcaption>
+    </figure>
+    <figure>
+      <div class="t e">
+        <h2>The arm is holding, 51 mm clear of the rod.</h2>
+        <div class="cols"><div style="background:#ebe3d4;height:170px"></div>
+          <div><div class="k">Tip, camera<b>41, −17 mm</b></div><div class="k">Speed<b>6.9 rpm</b></div><div class="k">Motor 2<b>Overload</b></div><span class="btn">Move tip</span></div></div>
+      </div>
+      <figcaption>Alternate · <b>E · Warm Editorial</b> (roulette web #12). Serif display is slow to read at a glance, and terracotta collides with warning amber.</figcaption>
+    </figure>
+    <figure>
+      <div class="t f">
+        <div class="l"><h3>Tip, from above</h3><svg viewBox="0 0 270 230" width="270" height="230" style="margin-top:8px"><circle cx="135" cy="118" r="96" fill="none" stroke="#111" stroke-width="1.5"/><line x1="80" y1="70" x2="190" y2="170" stroke="#ff6a13" stroke-width="8"/><circle cx="160" cy="92" r="6" fill="#111"/><circle cx="60" cy="60" r="9" fill="none" stroke="#2c5fd0" stroke-width="2"/><text x="52" y="64" font-size="10" fill="#2c5fd0" font-family="Archivo">1</text></svg>
+          <span class="note" style="left:170px;top:70px">tip, 2 mm off</span><span class="note" style="left:40px;top:220px">rod: keep 20 mm</span></div>
+        <div class="r"><div>TIP X<b>41</b></div><div>TIP Z<b>−17</b></div><div class="y">CLEAR<b>9</b></div><div>M0<b>38°</b></div><div>M1<b>0°</b></div><div class="k">M2<b>ERR</b></div><div>M3<b>12°</b></div><div>SPEED<b>6.9</b></div><div>BEND<b>42°</b></div></div>
+      </div>
+      <figcaption>Alternate · <b>F · Annotated plate</b> (roulette east #12). Its density works against the brief; hand call-outs on the view could be a detail elsewhere.</figcaption>
+    </figure>
+  </div>
+</main>
+</body>
+</html>

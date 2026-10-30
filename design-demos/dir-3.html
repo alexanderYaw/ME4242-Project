@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corset controller · C Floor plan</title>
+<meta name="description" content="Design prototype C (Floor plan, after Otl Aicher) for the EMIO-Labs Corset effector controller. Simulated data only.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Archivo+Narrow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* C · Floor plan. Colour is a code: --action (the one action colour), and the status fields fault / warn /
+   caution / ok. Everything else is black, white and rules. Day = white with black rules; night = black with grey
+   rules; the codes keep their meaning in both. */
+:root, html[data-theme="day"] {
+  --bg: #ffffff; --ink: #000000; --muted: #4f4f4f; --rule: #000000; --rule2: #c4c4c4; --field: #f1f1f1; --field2: #e2e2e2;
+  --action: #0047bb; --action-ink: #ffffff; --fault: #c8001a; --fault-ink: #ffffff; --warn: #ffb400; --warn-ink: #000000;
+  --caution: #7fd3ea; --caution-ink: #000000; --ok: #00843d; --ok-ink: #ffffff; --notice: #dcdcdc; --notice-ink: #000000;
+  --focus: #0047bb; --hatch: #c4c4c4;
+  --view-bg: #ffffff; --view-ink: #000000; --view-muted: #4f4f4f; --view-grid: #ececec; --view-reach: rgba(0,71,187,.06);
+  --view-reach-line: #000000; --view-camera: #00843d; --view-model: #000000; --view-target: #c8001a; --view-rod: #ff6a13;
+  --view-near: rgba(255,180,0,.45); --view-hit: rgba(200,0,26,.5); --view-path: #c8001a; --view-preview: #0047bb;
+  --view-arm: #0047bb; --view-arm-cam: #00843d; --view-pad: #9a5c00; --view-font: "Archivo Narrow", "Arial Narrow", sans-serif;
+}
+html[data-theme="night"] {
+  --bg: #000000; --ink: #f0f0f0; --muted: #a8a8a8; --rule: #7a7a7a; --rule2: #333333; --field: #141414; --field2: #222222;
+  --action: #1f5fe0; --action-ink: #ffffff; --fault: #d8172c; --fault-ink: #ffffff; --warn: #ffb400; --warn-ink: #000000;
+  --caution: #7fd3ea; --caution-ink: #000000; --ok: #2fae5a; --ok-ink: #000000; --notice: #3a3a3a; --notice-ink: #f0f0f0;
+  --focus: #ffd400; --hatch: #3a3a3a;
+  --view-bg: #000000; --view-ink: #f0f0f0; --view-muted: #a8a8a8; --view-grid: #1b1b1b; --view-reach: rgba(80,140,255,.10);
+  --view-reach-line: #9a9a9a; --view-camera: #2fd16a; --view-model: #f0f0f0; --view-target: #ff4d5e; --view-rod: #ff7a26;
+  --view-near: rgba(255,180,0,.35); --view-hit: rgba(255,40,60,.45); --view-path: #ff4d5e; --view-preview: #6b98ff;
+  --view-arm: #6b98ff; --view-arm-cam: #2fd16a; --view-pad: #ffb400;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 "Archivo", "Helvetica Neue", Arial, sans-serif;
+       font-variant-numeric: tabular-nums; overflow: hidden; }
+button, input, select { font: inherit; color: inherit; }
+.n { font-family: "Archivo Narrow", "Arial Narrow", sans-serif; }
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---- buttons: flat fields, square corners ---- */
+.b { min-height: 44px; min-width: 44px; padding: 0 14px; border: 2px solid var(--rule); background: var(--bg); cursor: pointer;
+     font: 600 15px/1 "Archivo Narrow", sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.b:hover:not(:disabled) { background: var(--field); }
+.b:active:not(:disabled) { background: var(--field2); }
+.b:disabled { opacity: .4; cursor: not-allowed; }
+.b.act { background: var(--action); border-color: var(--action); color: var(--action-ink); }
+.b.act:hover:not(:disabled) { background: var(--action); filter: brightness(1.12); }
+.b.off { background: var(--fault); border-color: var(--fault); color: var(--fault-ink); font-weight: 700; letter-spacing: .02em; }
+.b.off:hover:not(:disabled) { background: var(--fault); filter: brightness(1.1); }
+.b[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.b.sm { min-height: 44px; padding: 0 10px; font-size: 14px; }
+input[type=number], select { min-height: 44px; border: 2px solid var(--rule); background: var(--bg); padding: 0 8px; border-radius: 0; }
+input[type=number] { width: 88px; font-variant-numeric: tabular-nums; }
+input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--action); margin: 0; flex: none; }
+label.ck { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
+input[type=range] { width: 100%; accent-color: var(--action); height: 44px; }
+
+/* ---- app grid ---- */
+.app { position: fixed; left: 0; right: 0; bottom: 0; top: var(--sim-h, 0px); display: grid;
+       grid-template-columns: 96px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); }
+.rail { grid-row: 4; grid-column: 1; } .panel { grid-row: 4; grid-column: 2; }
+.cmderr { grid-row: 2; } .alerts { grid-row: 3; }
+.bar { grid-row: 1; grid-column: 1 / -1; display: flex; align-items: stretch; border-bottom: 3px solid var(--rule); min-height: 64px; }
+.bar > * { border-right: 1px solid var(--rule2); }
+.conn { display: flex; align-items: center; gap: 10px; padding: 0 14px; min-width: 214px; }
+.sq { width: 14px; height: 14px; flex: none; background: var(--muted); }
+.sq.ok { background: var(--ok); } .sq.fault { background: var(--fault); }
+.conn b { display: block; font-size: 15px; } .conn small { display: block; color: var(--muted); font-size: 13px; }
+.simtag { font: 700 12px "Archivo Narrow", sans-serif; border: 2px solid var(--ink); padding: 1px 5px; margin-left: 4px; }
+.mode { flex: 1; min-width: 0; padding: 8px 14px; display: flex; flex-direction: column; justify-content: center; }
+.mode small { color: var(--muted); font-size: 13px; }
+.mode b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.speed { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+.speed input { width: 130px; }
+.speed .v { min-width: 70px; font-weight: 600; }
+.summ { padding: 0 12px; display: flex; align-items: center; }
+.summ .b { border-width: 2px; }
+.summ .cnt { display: inline-flex; gap: 4px; }
+.lvb { display: inline-block; min-width: 26px; padding: 3px 6px; font: 700 13px "Archivo Narrow", sans-serif; text-align: center; }
+.lv-fault { background: var(--fault); color: var(--fault-ink); } .lv-warning { background: var(--warn); color: var(--warn-ink); }
+.lv-caution { background: var(--caution); color: var(--caution-ink); } .lv-notice { background: var(--notice); color: var(--notice-ink); }
+.globalstops { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-right: 0 !important; }
+.globalstops .b { min-height: 48px; }
+.themebtn { display: flex; align-items: center; padding: 0 10px; }
+
+/* ---- alert area (persistent, every panel) ---- */
+.alerts { grid-column: 1 / -1; border-bottom: 3px solid var(--rule); max-height: 132px; overflow-y: auto; }
+@media (max-height: 860px) { .alerts { max-height: 50px; } .alerts.open { max-height: 46vh; } }
+.alerts.open { max-height: 46vh; }
+.alerts:empty { display: none; }
+.al { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; border-bottom: 1px solid var(--rule2); min-height: 48px; }
+.al:last-child { border-bottom: 0; }
+.al-lv { display: flex; align-items: center; justify-content: center; font: 700 14px "Archivo Narrow", sans-serif; letter-spacing: .04em; }
+.al-main { padding: 6px 12px; min-width: 0; align-self: center; }
+.al-src { font-weight: 700; } .al-title { font-weight: 500; }
+.al-ack { display: inline-block; margin-left: 8px; font: 600 13px "Archivo Narrow", sans-serif; color: var(--muted); }
+.al-more { margin-top: 6px; color: var(--ink); font-size: 14px; }
+.al-more dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 6px 0; }
+.al-more dt { color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; } .al-more dd { margin: 0; }
+.al-more code { font: 13px ui-monospace, Menlo, Consolas, monospace; color: var(--muted); }
+.al-acts { display: flex; align-items: center; gap: 6px; padding: 6px 10px; flex-wrap: wrap; justify-content: flex-end; }
+.al.acked { min-height: 40px; } .al.acked .al-lv { opacity: .75; }
+.al.acked .al-acts .ackb { display: none; }
+.cmderr { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 4px 4px 4px 14px; background: var(--field); border-bottom: 1px solid var(--rule2); }
+.cmderr[hidden] { display: none; }
+.cmderr b { color: var(--fault); }
+html[data-theme="night"] .cmderr b { color: #ff7a87; }
+
+/* ---- rail ---- */
+.rail { border-right: 3px solid var(--rule); display: flex; flex-direction: column; }
+.rail button { border: 0; border-bottom: 1px solid var(--rule2); background: none; cursor: pointer; padding: 14px 4px 12px;
+               display: flex; flex-direction: column; align-items: center; gap: 8px; font: 700 14px "Archivo Narrow", sans-serif; min-height: 88px; }
+.rail button svg { width: 34px; height: 34px; }
+.rail button[aria-current="page"] { background: var(--ink); color: var(--bg); }
+.rail button:hover:not([aria-current="page"]) { background: var(--field); }
+.rail .spacer { flex: 1; }
+.rail .esc { padding: 10px 6px; font: 600 12px "Archivo Narrow", sans-serif; color: var(--muted); text-align: center; border-top: 1px solid var(--rule2); }
+
+/* ---- panels ---- */
+.panel { min-height: 0; min-width: 0; overflow: auto; }
+.panel[hidden] { display: none; }
+h2.sec { font: 700 16px "Archivo", sans-serif; margin: 0; }
+.secrow { display: flex; align-items: baseline; gap: 10px; justify-content: space-between; }
+.secrow small { color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; }
+
+/* Operate: dominant view | fixed control column */
+#p-operate { display: grid; grid-template-columns: minmax(0, 1fr) 372px; overflow: hidden; }
+.viewcol { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; border-right: 3px solid var(--rule); }
+.tabs { display: flex; align-items: stretch; border-bottom: 1px solid var(--rule); }
+.tabs [role=tab] { border: 0; border-right: 1px solid var(--rule2); background: none; cursor: pointer; min-height: 48px; padding: 0 18px;
+                   font: 700 15px "Archivo Narrow", sans-serif; }
+.tabs [role=tab][aria-selected="true"] { background: var(--ink); color: var(--bg); }
+.tabs [role=tab]:hover:not([aria-selected="true"]) { background: var(--field); }
+.tabs .tsp { flex: 1; }
+.tabs .tnote { align-self: center; padding: 0 12px; color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; }
+.stage { position: relative; min-height: 0; background: var(--view-bg); }
+.stage canvas.main { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.stage canvas.main[hidden] { display: none; }
+.stage canvas.clickable { cursor: crosshair; }
+.banner { position: absolute; left: 12px; top: 12px; max-width: calc(100% - 270px); padding: 8px 12px; font-weight: 600; font-size: 14px; border: 2px solid; background: var(--bg); }
+.banner[hidden] { display: none; }
+.banner.preview { border-style: dashed; border-color: var(--preview, var(--action)); color: var(--ink); }
+.banner.preview b { color: var(--view-preview); }
+.banner.moving { background: var(--action); border-color: var(--action); color: var(--action-ink); }
+.banner.joy { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.viewnote { position: absolute; inset: 0; display: grid; place-items: start center; padding-top: 64px; pointer-events: none; z-index: 2; }
+.viewnote span { background: var(--bg); border: 2px solid var(--rule); padding: 10px 16px; font-weight: 600; max-width: 80%; text-align: center; }
+.viewnote[hidden] { display: none; }
+.hint { position: absolute; left: 12px; bottom: 12px; padding: 8px 12px; background: var(--warn); color: var(--warn-ink); font-weight: 700; }
+.hint[hidden] { display: none; }
+.second { position: absolute; right: 12px; bottom: 12px; width: 232px; border: 2px solid var(--rule); background: var(--view-bg); }
+.second button { display: block; width: 100%; border: 0; border-top: 2px solid var(--rule); background: var(--bg); min-height: 44px;
+                 font: 700 13px "Archivo Narrow", sans-serif; cursor: pointer; text-align: left; padding: 0 10px; }
+.second button:hover { background: var(--field); }
+.second canvas { display: block; width: 100%; height: 150px; }
+.v3tools { position: absolute; right: 12px; top: 12px; display: flex; gap: 6px; }
+.v3tools[hidden] { display: none; }
+.lower { display: grid; grid-template-columns: minmax(0, 1fr) 340px; border-top: 1px solid var(--rule); }
+.readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; }
+.ro { padding: 8px 12px; border-right: 1px solid var(--rule2); border-bottom: 1px solid var(--rule2); min-width: 0; }
+.ro:nth-child(3n) { border-right: 0; } .ro.wide { border-right: 0; }
+.ro .k { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; }
+.ro .k i { font-style: normal; }
+.ro .v { font: 700 22px "Archivo", sans-serif; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ro .v small { font: 500 14px "Archivo Narrow", sans-serif; color: var(--muted); margin-left: 4px; }
+.ro.stale .v { color: var(--muted); }
+.tag { display: inline-block; padding: 0 5px; font: 700 12px "Archivo Narrow", sans-serif; border: 1.5px solid currentColor; }
+.tag.live { background: var(--ok); color: var(--ok-ink); border-color: var(--ok); }
+.tag.warn { background: var(--warn); color: var(--warn-ink); border-color: var(--warn); }
+.tag.fault { background: var(--fault); color: var(--fault-ink); border-color: var(--fault); }
+.tag.caution { background: var(--caution); color: var(--caution-ink); border-color: var(--caution); }
+.ro.wide { grid-column: span 2; }
+.ro .sub { font-size: 14px; color: var(--ink); margin-top: 2px; }
+
+.ctlcol { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+.ctl { padding: 10px 14px 12px; border-bottom: 3px solid var(--rule); display: grid; gap: 8px; flex: none; }
+.xz { display: flex; gap: 10px; align-items: center; }
+.xz label { display: flex; align-items: center; gap: 6px; font: 700 15px "Archivo Narrow", sans-serif; }
+.xz input { width: 84px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.status { font-size: 14px; min-height: 2.6em; border-left: 4px solid var(--rule2); padding: 2px 0 2px 10px; }
+.status b { text-transform: capitalize; }
+.status.st-moving { border-color: var(--action); } .status.st-failed { border-color: var(--fault); } .status.st-limited { border-color: var(--warn); }
+.status.st-done { border-color: var(--ok); }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.opts .ck { font-size: 14px; line-height: 1.2; min-height: 44px; }
+.joy { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 12px; align-items: start; }
+#stick { width: 140px; height: 140px; touch-action: none; cursor: grab; display: block; }
+#stick.dragging { cursor: grabbing; }
+.joyset { display: grid; gap: 4px; }
+.joyset label { display: grid; gap: 2px; font: 600 13px "Archivo Narrow", sans-serif; color: var(--muted); }
+.joyset select { width: 100%; color: var(--ink); }
+.joyst { font-size: 13px; display: grid; gap: 0; line-height: 1.3; }
+p.help { margin: 0; font-size: 14px; border-left: 4px solid var(--rule2); padding-left: 10px; }
+.joyst .k { color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; }
+details.help { font-size: 14px; }
+details.help summary { cursor: pointer; font: 600 14px "Archivo Narrow", sans-serif; min-height: 44px; display: flex; align-items: center; }
+details.help p { margin: 4px 0 0; color: var(--ink); }
+
+/* motor map: the robot from above (1 top-left, 0 top-right, 2 bottom-left, 3 bottom-right) */
+.mapwrap { padding: 8px 12px 10px; display: grid; gap: 6px; border-left: 3px solid var(--rule); grid-template-rows: auto minmax(0, 1fr); }
+.map { position: relative; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 20px; min-height: 150px; }
+.map svg.pairs { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.map .pl { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font: 700 12px "Archivo Narrow", sans-serif;
+           background: var(--bg); padding: 0 3px; color: var(--muted); white-space: nowrap; }
+.mc { position: relative; z-index: 1; border: 2px solid var(--rule); background: var(--bg); color: var(--ink); cursor: pointer; text-align: left;
+      display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 10px; padding: 6px 10px; min-height: 64px; }
+.mc:hover { outline: 2px solid var(--ink); outline-offset: -6px; }
+.mc .mn { grid-row: 1 / 3; font: 800 42px/0.9 "Archivo", sans-serif; }
+.mc .ms { font: 700 14px/1.15 "Archivo Narrow", sans-serif; text-transform: uppercase; letter-spacing: .03em; align-self: start; }
+.mc .mx { font: 500 13px "Archivo Narrow", sans-serif; color: inherit; opacity: .85; }
+.mc .mv { grid-column: 1 / -1; align-self: end; font: 700 19px "Archivo", sans-serif; font-variant-numeric: tabular-nums; }
+.mc .mv small { font: 500 13px "Archivo Narrow", sans-serif; margin-left: 4px; }
+.mc.s-fault { background: var(--fault); color: var(--fault-ink); border-color: var(--fault); }
+.mc.s-warn { background: var(--warn); color: var(--warn-ink); border-color: var(--warn); }
+.mc.s-caution { background: var(--caution); color: var(--caution-ink); border-color: var(--caution); }
+.mc.s-off { background: var(--field2); }
+.mc.s-unk { background: repeating-linear-gradient(135deg, var(--bg) 0 8px, var(--hatch) 8px 9px); border-style: dashed; color: var(--muted); }
+.mc.sel { box-shadow: inset 0 0 0 4px var(--action); }
+.mc.s-moving .ms::after { content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 6px; background: var(--action); vertical-align: 0; }
+
+/* Motors panel */
+#p-motors { display: grid; grid-template-columns: minmax(340px, 520px) minmax(0, 1fr); }
+.mleft { border-right: 3px solid var(--rule); display: grid; grid-template-rows: auto minmax(0, 1fr); padding: 14px; gap: 10px; min-height: 0; }
+.mleft .map { min-height: 420px; }
+.mleft .mc { min-height: 170px; grid-template-rows: auto auto auto 1fr; }
+.mleft .mc .mrows { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr; gap: 0 10px; font: 500 14px "Archivo Narrow", sans-serif; align-self: end; }
+.mleft .mc .mrows span:nth-child(odd) { opacity: .8; }
+.mdetail { padding: 14px 18px 24px; display: grid; gap: 14px; align-content: start; }
+.mhead { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mhead .big { font: 800 40px/1 "Archivo", sans-serif; }
+.mhead .where { color: var(--muted); font: 600 14px "Archivo Narrow", sans-serif; }
+.mhead .ms { padding: 6px 10px; font: 700 15px "Archivo Narrow", sans-serif; text-transform: uppercase; border: 2px solid var(--rule); }
+.mhead .ms.s-fault { background: var(--fault); color: var(--fault-ink); border-color: var(--fault); }
+.mhead .ms.s-warn { background: var(--warn); color: var(--warn-ink); border-color: var(--warn); }
+.mhead .ms.s-caution { background: var(--caution); color: var(--caution-ink); border-color: var(--caution); }
+.mhead .ms.s-unk { border-style: dashed; color: var(--muted); }
+.malerts:empty { display: none; }
+.malerts { border: 2px solid var(--rule); }
+.tele { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 2px solid var(--rule); border-left: 1px solid var(--rule2); }
+.tele div { padding: 8px 10px; border-right: 1px solid var(--rule2); border-bottom: 1px solid var(--rule2); }
+.tele span { display: block; color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; }
+.tele b { font: 700 22px "Archivo", sans-serif; font-variant-numeric: tabular-nums; }
+.tele b small { font: 500 13px "Archivo Narrow", sans-serif; color: var(--muted); margin-left: 3px; }
+.slidewrap { display: grid; gap: 2px; }
+.slidelab { display: flex; justify-content: space-between; font: 600 13px "Archivo Narrow", sans-serif; color: var(--muted); }
+.clampnote { color: var(--ink); background: var(--warn); padding: 0 6px; color: var(--warn-ink); }
+.jogrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.eng { border-top: 1px solid var(--rule2); padding-top: 6px; }
+.eng summary { cursor: pointer; font: 600 14px "Archivo Narrow", sans-serif; min-height: 44px; display: flex; align-items: center; }
+.eng dl { display: grid; grid-template-columns: repeat(2, auto 1fr); gap: 4px 14px; margin: 6px 0 0; font-size: 14px; }
+.eng dt { color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; } .eng dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* Setup */
+#p-setup { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: start; }
+.sx { padding: 14px 16px 18px; border-right: 1px solid var(--rule2); border-bottom: 3px solid var(--rule); display: grid; gap: 10px; align-content: start; }
+.sx:nth-child(3n) { border-right: 0; }
+.sx.full { grid-column: 1 / -1; border-right: 0; }
+.sx p { margin: 0; font-size: 14px; }
+.sx .muted { color: var(--muted); }
+.frm { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; }
+.frm label { font: 600 14px "Archivo Narrow", sans-serif; }
+.seg { display: flex; } .seg .b { margin-left: -2px; } .seg .b:first-child { margin-left: 0; }
+.callist { display: grid; gap: 6px; }
+.callist div { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--rule2); padding-top: 6px; font-size: 14px; }
+#setupCam { width: 100%; aspect-ratio: 4 / 3; display: block; border: 2px solid var(--rule); cursor: crosshair; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 14px; margin: 0; }
+.kv dt { color: var(--muted); font: 600 13px "Archivo Narrow", sans-serif; } .kv dd { margin: 0; }
+.diag { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; }
+.diag table { border-collapse: collapse; width: 100%; font-size: 14px; }
+.diag th, .diag td { text-align: left; padding: 5px 8px 5px 0; border-bottom: 1px solid var(--rule2); vertical-align: top; }
+.diag th { font: 600 13px "Archivo Narrow", sans-serif; color: var(--muted); }
+.diag code, .sx code { font: 13px ui-monospace, Menlo, Consolas, monospace; }
+.diag ul { margin: 0; padding-left: 18px; font-size: 14px; } .diag li { margin: 3px 0; }
+
+dialog { border: 3px solid var(--rule); background: var(--bg); color: var(--ink); padding: 0; max-width: 460px; width: calc(100vw - 32px); }
+dialog::backdrop { background: rgba(0,0,0,.55); }
+dialog h2 { margin: 0; padding: 14px 18px; font: 700 18px "Archivo", sans-serif; border-bottom: 2px solid var(--rule); }
+dialog p { margin: 0; padding: 14px 18px; }
+dialog .acts { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 16px; }
+
+/* ---- narrower screens ---- */
+@media (max-width: 1240px) {
+  .speed input { width: 96px; } .conn { min-width: 0; } .mode small { display: none; }
+  #p-operate { grid-template-columns: minmax(0, 1fr) 340px; }
+  .lower { grid-template-columns: minmax(0, 1fr) 250px; } .map { min-height: 120px; } .mc { min-height: 56px; }
+  .readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ro:nth-child(3n) { border-right: 1px solid var(--rule2); } .ro:nth-child(2n) { border-right: 0; } .ro.wide { grid-column: 1 / -1; }
+  .ro .v { font-size: 19px; } .mc .mn { font-size: 34px; } .mc .mx { display: none; }
+  #p-setup { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sx:nth-child(3n) { border-right: 1px solid var(--rule2); } .sx:nth-child(2n) { border-right: 0; }
+  #p-motors { grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); }
+  .mleft .map { min-height: 360px; } .mleft .mc { min-height: 150px; }
+  .tele { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .second { width: 196px; } .second canvas { height: 128px; }
+  .banner { max-width: calc(100% - 230px); }
+}
+@media (max-width: 1100px) {
+  .bar { flex-wrap: wrap; }
+  .mode { order: 9; flex-basis: 100%; border-top: 1px solid var(--rule2); padding: 6px 14px; min-height: 40px; }
+  .themebtn .lbl { display: none; }
+}
+@media (min-height: 860px) and (min-width: 1241px) { #stick { width: 168px; height: 168px; } .joy { grid-template-columns: 168px minmax(0, 1fr); } }
+@media (max-height: 800px) and (min-width: 901px) {
+  .ctl { padding: 10px 14px 12px; gap: 8px; } .status { min-height: 0; }
+  #stick { width: 120px; height: 120px; } .joy { grid-template-columns: 120px minmax(0, 1fr); }
+  .ctl { gap: 6px; padding: 8px 14px 10px; }
+  .mc .mn { font-size: 30px; } .mc { min-height: 58px; } .mc .mx { display: none; } .map { min-height: 130px; }
+  .ro { padding: 6px 12px; } .ro .v { font-size: 18px; }
+}
+@media (max-width: 900px) {
+  .app { grid-template-columns: 76px minmax(0, 1fr); }
+  .rail button { min-height: 76px; font-size: 13px; }
+  #p-operate { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(420px, 52vh) auto; overflow-y: auto; }
+  .viewcol { border-right: 0; border-bottom: 3px solid var(--rule); }
+  .ctlcol { display: grid; grid-template-columns: 1fr 1fr; overflow: visible; }
+  .ctlcol .ctl:nth-child(2) { border-left: 1px solid var(--rule2); }
+  #p-operate { grid-template-rows: auto auto; align-content: start; } .viewcol { grid-template-rows: auto minmax(420px, 50vh) auto; min-height: auto; }
+  .ctlcol { min-height: auto; } .globalstops { margin-left: auto; }
+  .lower { grid-template-columns: minmax(0, 1fr); } .mapwrap { border-left: 0; border-top: 3px solid var(--rule); }
+  .map { min-height: 240px; } .mc .mx { display: block; } .mc .mn { font-size: 42px; }
+  .speed input { width: 90px; }
+  #p-setup { grid-template-columns: minmax(0, 1fr); } .sx { border-right: 0 !important; }
+  #p-motors { grid-template-columns: minmax(0, 1fr); overflow-y: auto; } .mleft { border-right: 0; border-bottom: 3px solid var(--rule); }
+  .readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ro:nth-child(3n) { border-right: 1px solid var(--rule2); } .ro:nth-child(2n) { border-right: 0; }
+  .ro.wide { grid-column: 1 / -1; }
+  .diag { grid-template-columns: minmax(0, 1fr); }
+  .globalstops .b { padding: 0 10px; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar" aria-label="Global controls">
+    <div class="conn" role="status" aria-live="polite"><span class="sq" id="connSq"></span>
+      <div><b id="connText">—</b><small id="connSub"></small></div></div>
+    <div class="mode"><small>Control mode and movement</small><b id="modeText" aria-live="polite">—</b></div>
+    <div class="speed"><label for="speed" class="n" style="font-weight:600">Speed</label>
+      <input type="range" id="speed" min="5" max="200" step="5" aria-describedby="speedVal"><span class="v num" id="speedVal">—</span></div>
+    <div class="summ"><button class="b" id="summBtn" aria-expanded="false" aria-controls="alerts"><span class="cnt" id="summCnt"></span><span id="summText">No active alerts</span></button></div>
+    <div class="themebtn"><button class="b sm" id="themeBtn" aria-pressed="false" title="Switch between day and night display">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 2a7 7 0 0 1 0 14z" fill="currentColor"/></svg>
+      <span class="lbl" id="themeLbl">Night</span></button></div>
+    <div class="globalstops">
+      <button class="b" id="holdAll" title="Stop tip control and keep every powered motor where it is now (torque stays on)">Hold all</button>
+      <button class="b off" id="torqueOff" title="Release every motor (Esc, gamepad B / Circle). Motors go limp; nothing holds position.">TORQUE OFF ALL</button>
+    </div>
+  </header>
+  <div class="cmderr" id="cmdErr" role="alert" hidden><b>Command refused</b><span id="cmdErrText"></span><span style="flex:1"></span><button class="b sm" id="cmdErrClose">Dismiss</button></div>
+  <section class="alerts" id="alerts" aria-label="Active alerts"></section>
+  <div class="vh" aria-live="assertive" id="liveA"></div><div class="vh" aria-live="polite" id="liveP"></div>
+
+  <nav class="rail" aria-label="Task areas">
+    <button data-panel="operate" aria-current="page">
+      <svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="12" fill="none" stroke="currentColor" stroke-width="3"/><path d="M17 1v10M17 23v10M1 17h10M23 17h10" stroke="currentColor" stroke-width="3"/><circle cx="17" cy="17" r="3.5" fill="currentColor"/></svg>Operate</button>
+    <button data-panel="motors">
+      <svg viewBox="0 0 34 34" aria-hidden="true"><rect x="3" y="3" width="11" height="11" fill="currentColor"/><rect x="20" y="3" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3"/><rect x="3" y="20" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3"/><rect x="20" y="20" width="11" height="11" fill="currentColor"/></svg>Motors</button>
+    <button data-panel="setup">
+      <svg viewBox="0 0 34 34" aria-hidden="true"><path d="M3 8h28M3 17h28M3 26h28" stroke="currentColor" stroke-width="3"/><rect x="8" y="4" width="6" height="8" fill="currentColor"/><rect x="20" y="13" width="6" height="8" fill="currentColor"/><rect x="11" y="22" width="6" height="8" fill="currentColor"/></svg>Setup</button>
+    <span class="spacer"></span>
+    <span class="esc"><kbd>Esc</kbd><br>torque off all</span>
+  </nav>
+
+  <!-- ================= OPERATE ================= -->
+  <main class="panel" id="p-operate" aria-label="Operate">
+    <div class="viewcol">
+      <div class="tabs" role="tablist" aria-label="Workspace view">
+        <button role="tab" data-view="camera" aria-selected="false">Camera</button>
+        <button role="tab" data-view="top" aria-selected="true">Top</button>
+        <button role="tab" data-view="side" aria-selected="false">Side</button>
+        <button role="tab" data-view="3d" aria-selected="false">3D</button>
+        <span class="tsp"></span><span class="tnote" id="viewNoteTxt">Click to set a target</span>
+      </div>
+      <div class="stage" id="stage" role="tabpanel" aria-label="Workspace view">
+        <canvas class="main" data-kind="top" aria-label="Top view of the tip workspace"></canvas>
+        <canvas class="main" data-kind="camera" hidden aria-label="Camera image"></canvas>
+        <canvas class="main" data-kind="side" hidden aria-label="Side view of the bending plane"></canvas>
+        <canvas class="main" data-kind="3d" hidden aria-label="3D view: drag to orbit, scroll to zoom, double-click the tip surface to preview"></canvas>
+        <div class="banner" id="banner" hidden aria-live="polite"></div>
+        <div class="viewnote" id="viewNote" hidden><span id="viewNoteText"></span></div>
+        <div class="hint" id="pickHint" hidden></div>
+        <div class="v3tools" id="v3tools" hidden><button class="b sm" data-preset="front">Front</button><button class="b sm" data-preset="top">Top</button>
+          <button class="b sm" data-preset="camera">Camera's view</button><button class="b sm" id="playBtn">Play path</button></div>
+        <div class="second"><canvas id="second" aria-hidden="true"></canvas><button id="swapBtn">Show — larger</button></div>
+      </div>
+      <div class="lower">
+      <div class="readouts" id="readouts">
+        <div class="ro" id="roCam"><div class="k"><span>Tip · camera (x, z)</span><i></i></div><div class="v">—</div></div>
+        <div class="ro" id="roModel"><div class="k"><span>Tip · model <span class="vh">(from motor angles)</span></span><i></i></div><div class="v">—</div></div>
+        <div class="ro" id="roY"><div class="k"><span>Height y</span><i></i></div><div class="v">—</div><div class="sub" id="roBend"></div></div>
+        <div class="ro" id="roRod"><div class="k"><span>Rod tracking</span><i></i></div><div class="sub" style="font-size:15px;font-weight:600"></div></div>
+        <div class="ro wide" id="roClear"><div class="k"><span>Obstacle · arm clearance from the rod</span><i></i></div><div class="v">—</div><div class="sub"></div></div>
+      </div>
+      <section class="mapwrap" aria-labelledby="hMap">
+        <div class="secrow"><h2 class="sec" id="hMap">Motors, from above</h2><small>pairs A 0–2 · B 1–3 · select for detail</small></div>
+        <div class="map" id="mapOp"></div>
+      </section>
+      </div>
+    </div>
+
+    <aside class="ctlcol" aria-label="Controls">
+      <section class="ctl" aria-labelledby="hMove">
+        <div class="secrow"><h2 class="sec" id="hMove">Move tip</h2><small id="tgtSrc"></small></div>
+        <div class="xz"><label>X <input type="number" id="tipX" step="1" inputmode="decimal"></label>
+          <label>Z <input type="number" id="tipZ" step="1" inputmode="decimal"></label><span class="n" style="color:var(--muted)">mm</span></div>
+        <div class="row2"><button class="b act" id="tipGo">Move tip</button><button class="b" id="tipStop" title="Ends a tip move; the arm holds where it is">Stop tip</button></div>
+        <div class="opts"><label class="ck"><input type="checkbox" id="tipClosed" checked> Correct with camera (closed loop)</label>
+          <label class="ck"><input type="checkbox" id="tipClick" checked> Move when I click the top view</label></div>
+        <div class="status" id="tipStatus" aria-live="polite">Idle</div>
+      </section>
+      <section class="ctl" aria-labelledby="hJoy">
+        <div class="secrow"><h2 class="sec" id="hJoy">Joystick</h2><button class="b sm" id="joyHelpBtn" aria-expanded="false" aria-controls="joyHelp">How it works</button></div>
+        <div class="joy">
+          <canvas id="stick" role="img" aria-label="On-screen stick: drag to move, release to hold. Numbers are the motors in their physical positions."></canvas>
+          <div class="joyset">
+            <label>Stick moves<select id="joyMode"><option value="tip">the tip (top-view direction)</option><option value="bend">the motors (push toward a motor)</option></select></label>
+            <label>Stick control<select id="joyControl"><option value="rate">jog: deflection = speed</option><option value="position">position: deflection = where</option></select></label>
+            <div class="joyst"><span><span class="k">Gamepad</span> <span id="joyPad">none</span></span><span><span class="k">Stick</span> <span id="joyEnable">released</span></span></div>
+          </div>
+        </div>
+        <div class="row2"><button class="b act" id="joyStart">Start joystick</button><button class="b" id="joyStop" title="Ends joystick control; the arm holds where it is">Stop joystick</button></div>
+        <div class="status" id="joyStatus" aria-live="polite" style="min-height:1.6em"></div>
+        <p class="help" id="joyHelp" hidden><b>On-screen:</b> drag the stick; let go and it recentres and the arm holds. <b>Gamepad:</b> left stick steers, hold
+            <b>RT / R2</b> (or RB / R1) to move, <b>B / Circle</b> = torque off all. <b>Jog:</b> deflection sets speed; let go and the target
+            stays. <b>Position:</b> the stick points at a spot. Moves follow the pair rules and current limits.</p>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ================= MOTORS ================= -->
+  <main class="panel" id="p-motors" aria-label="Motors" hidden>
+    <div class="mleft">
+      <div class="secrow"><h2 class="sec">Motors, from above</h2><small>pairs A 0–2 · B 1–3</small></div>
+      <div class="map" id="mapM"></div>
+    </div>
+    <div class="mdetail" id="mdetail">
+      <div class="mhead"><span class="big" id="mdTitle">Motor 0</span><span class="where" id="mdWhere"></span><span class="ms" id="mdState"></span></div>
+      <div class="malerts" id="mdAlerts" aria-label="Alerts for this motor"></div>
+      <div class="jogrow">
+        <button class="b" id="mdTorque" aria-pressed="false">Torque off</button>
+        <span class="n" id="mdTorqueNote" style="color:var(--muted)"></span>
+      </div>
+      <div class="slidewrap">
+        <div class="slidelab"><span id="mdLo">—</span><span class="clampnote" id="mdClamp" hidden>at limit: command clamped</span><span id="mdHi">—</span></div>
+        <input type="range" id="mdSlider" step="0.1" aria-label="Goal angle (degrees, relative to calibrated zero)">
+      </div>
+      <div class="jogrow">
+        <button class="b" data-jog="-5">−5°</button><button class="b" data-jog="-1">−1°</button><button class="b" data-jog="1">+1°</button><button class="b" data-jog="5">+5°</button>
+        <label class="n" style="display:flex;align-items:center;gap:6px;font-weight:600;margin-left:8px">Target <input type="number" id="mdTarget" step="0.1" aria-label="Target angle in degrees"> °</label>
+        <button class="b act" id="mdGo">Go</button>
+      </div>
+      <div class="jogrow">
+        <button class="b off" id="mdReboot" hidden>Reboot motor…</button>
+        <button class="b" id="mdZero" title="The current position becomes 0 (angle and cable displacement)">Calibrate: set 0 here</button>
+        <button class="b" id="mdSettings">Settings in Setup</button>
+      </div>
+      <div class="tele" id="mdTele"></div>
+      <details class="eng"><summary>Engineering details</summary><dl id="mdEng"></dl></details>
+    </div>
+  </main>
+
+  <!-- ================= SETUP ================= -->
+  <main class="panel" id="p-setup" aria-label="Setup and diagnostics" hidden>
+    <section class="sx" aria-labelledby="hConn">
+      <h2 class="sec" id="hConn">Serial connection</h2>
+      <div class="frm"><label for="port">Port</label><select id="port"><option value="">auto (first FTDI)</option></select></div>
+      <div class="row2"><button class="b act" id="connect">Connect</button><button class="b" id="disconnect">Disconnect</button></div>
+      <button class="b sm" id="refreshPorts">Refresh port list</button>
+      <p id="connInfo" class="muted"></p>
+    </section>
+    <section class="sx" aria-labelledby="hCal">
+      <h2 class="sec" id="hCal">Calibration</h2>
+      <p class="muted">Calibrate where each cable just goes taut. Angles, goals and cable length are then relative to that zero.</p>
+      <button class="b" id="calAll">Calibrate all…</button>
+      <div class="callist" id="calList"></div>
+    </section>
+    <section class="sx" aria-labelledby="hMs">
+      <h2 class="sec" id="hMs">Motor settings</h2>
+      <div class="seg" role="group" aria-label="Motor" id="msSeg"></div>
+      <div class="frm">
+        <label for="msRadius">Drum radius (mm)</label><input type="number" id="msRadius" step="0.1" min="0.1">
+        <label for="msInvert">Invert cable sign</label><input type="checkbox" id="msInvert">
+        <label for="msMin">Soft min (° absolute)</label><input type="number" id="msMin" step="1">
+        <label for="msMax">Soft max (° absolute)</label><input type="number" id="msMax" step="1">
+      </div>
+      <div class="row2"><button class="b act" id="msSave">Save</button><button class="b" id="msClear">Clear calibration</button></div>
+    </section>
+    <section class="sx" aria-labelledby="hObs">
+      <h2 class="sec" id="hObs">Obstacle (rod)</h2>
+      <label class="ck"><input type="checkbox" id="obsAvoid"> Plan moves around it</label>
+      <div class="frm"><label for="obsClear">Arm at least (mm clear)</label><input type="number" id="obsClear" min="0" max="100" step="1"></div>
+      <div class="row2"><button class="b" id="obsPick" aria-pressed="false">Pick rod colour</button><button class="b" id="obsMark" aria-pressed="false">Mark rod ends</button></div>
+      <button class="b" id="obsForget">Forget rod</button>
+      <p id="obsStatus" aria-live="polite"></p>
+      <canvas id="setupCam" aria-label="Camera image: click the rod to pick its colour or mark its ends"></canvas>
+      <p class="muted">Clearance is from the arm's centreline to the rod's surface and comes from the model: allow for the disc radius and the model error (about ±8 mm). It is not a guarantee.</p>
+    </section>
+    <section class="sx" aria-labelledby="hModel">
+      <h2 class="sec" id="hModel">Tip model</h2>
+      <dl class="kv" id="modelInfo"></dl>
+      <h2 class="sec" style="margin-top:10px">Joystick</h2>
+      <label class="ck"><input type="checkbox" id="invX"> Invert gamepad x</label>
+      <label class="ck"><input type="checkbox" id="invY"> Invert gamepad y</label>
+    </section>
+    <section class="sx" aria-labelledby="h3d">
+      <h2 class="sec" id="h3d">3D view</h2>
+      <label class="ck"><input type="checkbox" id="o3Cloud" checked> Camera point cloud</label>
+      <div class="frm"><label for="o3Crop">Cloud within (mm of the arm, 0 = all)</label><input type="number" id="o3Crop" value="250" min="0" step="25"></div>
+      <label class="ck"><input type="checkbox" id="o3Surface" checked> Tip surface</label>
+      <label class="ck"><input type="checkbox" id="o3Zone" checked> Clearance zone</label>
+      <label class="ck"><input type="checkbox" id="o3ArmCam" checked> Arm from camera</label>
+      <label class="ck"><input type="checkbox" id="o3Path" checked> Planned path</label>
+      <div class="jogrow"><button class="b sm" data-preset="front">Front</button><button class="b sm" data-preset="top">Top</button><button class="b sm" data-preset="camera">Camera's view</button><button class="b sm" id="playBtn2">Play path</button></div>
+    </section>
+    <section class="sx full" aria-labelledby="hDiag">
+      <h2 class="sec" id="hDiag">Diagnostics</h2>
+      <div class="diag">
+        <div><table><thead><tr><th>Level</th><th>Source</th><th>Condition</th><th>Raw</th></tr></thead><tbody id="diagRows"></tbody></table></div>
+        <div>
+          <ul>
+            <li>Angles follow emioapi: angle = (2048 − pulse) × 2π / 4096 (pulse 2048 = 0°). After calibration, angle, goal, slider and jog are relative to the calibrated zero; soft limits stay absolute.</li>
+            <li>Cable displacement = (angle − zero) × drum radius. The zero is stored in <code>data/settings.json</code>; the motor itself is not changed.</li>
+            <li>Turning torque on holds the current position. Commands are clamped to the soft limits and the motor's firmware limits.</li>
+            <li>Tip moves follow the pair rules (0/2 and 1/3 oppose; only one of each pair pulls) and back off above the backend's current limit.</li>
+            <li>Camera feed: <code>~/emio-venv/bin/python tip_feed.py</code>. Tip model: <code>fit_tip_model.py data/tip_&lt;time&gt;.csv</code>. GUI: <code>cd motor_gui &amp;&amp; ./run.sh</code>.</li>
+            <li>This prototype is simulated: commands go to the in-page simulator (see the SIMULATION strip's command log).</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="confirm" aria-labelledby="cfT" aria-describedby="cfB">
+  <h2 id="cfT">Confirm</h2><p id="cfB"></p>
+  <div class="acts"><button class="b" id="cfNo">Cancel</button><button class="b act" id="cfYes">Confirm</button></div>
+</dialog>
+
+<script src="shared/sim.js"></script>
+<script src="shared/views.js"></script>
+<script src="shared/harness.js"></script>
+<script src="dir-3.js"></script>
+</body>
+</html>

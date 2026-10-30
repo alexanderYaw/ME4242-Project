@@ -17,6 +17,7 @@ except ImportError:
 
 IDS = (0, 1, 2, 3)
 BAUD = 1_000_000
+WRITE_ATTEMPTS = 3      # a write whose reply is lost is sent again, up to this many times in all
 PROTOCOL = 2.0
 PULSE_CENTER = 2048
 PULSE_PER_RAD = 4096 / (2 * math.pi)
@@ -73,8 +74,10 @@ def _field(raw, offset, length, signed=True):
 
 class DynamixelBus:
     def __init__(self, port_name):
-        from dynamixel_sdk import COMM_SUCCESS, GroupSyncRead, PacketHandler, PortHandler
+        from dynamixel_sdk import COMM_RX_CORRUPT, COMM_RX_TIMEOUT, COMM_SUCCESS, GroupSyncRead, PacketHandler, PortHandler
         self._ok = COMM_SUCCESS
+        self._lost = (COMM_RX_TIMEOUT, COMM_RX_CORRUPT)
+        self.write_retries = 0  # writes repeated after a lost reply (diagnostics)
         self._GroupSyncRead = GroupSyncRead
         self.port_name = port_name
         self.lock = threading.RLock()
@@ -120,7 +123,14 @@ class DynamixelBus:
     def _write(self, motor_id, addr, length, value):
         with self.lock:
             fn = {1: self.ph.write1ByteTxRx, 2: self.ph.write2ByteTxRx, 4: self.ph.write4ByteTxRx}[length]
-            res, err = fn(self.port, motor_id, addr, value & ((1 << (8 * length)) - 1))
+            for attempt in range(WRITE_ATTEMPTS):
+                res, err = fn(self.port, motor_id, addr, value & ((1 << (8 * length)) - 1))
+                if res not in self._lost:
+                    break
+                # a lost or garbled reply (e.g. this process got the CPU too late): writing the same value
+                # again is harmless
+                if attempt < WRITE_ATTEMPTS - 1:
+                    self.write_retries += 1
             if res != self._ok:
                 raise RuntimeError(f"Motor {motor_id}: {self.ph.getTxRxResult(res)}")
             if err:
