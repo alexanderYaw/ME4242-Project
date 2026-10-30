@@ -1,0 +1,2305 @@
+{
+ "url": "http://localhost:8011/",
+ "at": "2026-10-30T12:44:44.448Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 4,
+   "filled": [
+    0.94,
+    0.97,
+    0.99,
+    0.69
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 3379,
+     "screens": 3.8,
+     "words": 847,
+     "img": 1,
+     "video": 0,
+     "canvas": 4,
+     "svg": 0,
+     "sections": 5,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "chars": 18,
+     "lines": 1,
+     "size": 16,
+     "vw": 1.1,
+     "font": "system-ui",
+     "weight": 700,
+     "tracking": 0,
+     "leading": 1.4,
+     "top": 18,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "lines": 1,
+     "size": 16,
+     "font": "system-ui"
+    },
+    "headings": [
+     {
+      "text": "2048",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 2.1,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.05,
+      "top": 153,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1748",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 2.1,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.05,
+      "top": 153,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1448",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 2.1,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.05,
+      "top": 153,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1148",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 2.1,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.05,
+      "top": 153,
+      "tag": "span",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 4,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "system-ui",
+       "share": 0.91,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.07,
+       "mono": false
+      },
+      {
+       "family": "monospace",
+       "share": 0.02,
+       "mono": true
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      30
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": {
+      "font": "system-ui",
+      "size": 12,
+      "leading": 1.4,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 4.8
+     },
+     "measureChars": 57,
+     "max": {
+      "size": 30,
+      "vw": 2.1,
+      "font": "ui-monospace",
+      "text": "2048"
+     },
+     "monoShare": 0.09,
+     "monoProseShare": 0.07,
+     "monoFamilies": [
+      "ui-monospace",
+      "monospace"
+     ],
+     "monoSamples": [
+      "45.8 rpm",
+      "2048",
+      "pulses",
+      "-10.63°",
+      "-0.1856",
+      "-3.71 mm"
+     ],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.13,
+     "centerShare": 0.09,
+     "smallText": 28
+    },
+    "eyebrows": [
+     {
+      "text": "Motor 0",
+      "above": "2048",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 90
+     },
+     {
+      "text": "Motor 1",
+      "above": "1748",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 90
+     },
+     {
+      "text": "Motor 2",
+      "above": "1448",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 90
+     },
+     {
+      "text": "Motor 3",
+      "above": "1148",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 90
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f5f6f8",
+     "bodyBgHsl": {
+      "h": 220,
+      "s": 0.18,
+      "l": 0.97
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 524,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      },
+      {
+       "color": "#f5f6f8",
+       "top": 2092,
+       "hsl": {
+        "h": 220,
+        "s": 0.18,
+        "l": 0.97
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#6b7380",
+       "share": 0.72
+      },
+      {
+       "color": "#1b1f24",
+       "share": 0.27
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      },
+      {
+       "color": "#e0533d",
+       "share": 0
+      },
+      {
+       "color": "#3d7be0",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#eef1f5",
+      "hsl": {
+       "h": 214,
+       "s": 0.26,
+       "l": 0.95
+      },
+      "fg": "#1b1f24"
+     },
+     "lowContrast": [
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 20,
+     "inHero": 14,
+     "radius": 6,
+     "height": 34,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Connect",
+      "Disconnect",
+      "Calibrate all",
+      "Hold all",
+      "TORQUE OFF ALL"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 7,
+     "hairlineSamples": [
+      "header 1440px",
+      "details 310px",
+      "details 310px",
+      "details 310px",
+      "details 310px"
+     ],
+     "outlinedBoxes": 10,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 7,
+     "boxRadius": 10,
+     "squareMedia": 0,
+     "roundedMedia": 3,
+     "mediaRadius": 8,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 75
+      }
+     ]
+    },
+    "heroMedia": [
+     {
+      "type": "canvas",
+      "ratio": 0.14
+     },
+     {
+      "type": "canvas",
+      "ratio": 0.1
+     }
+    ],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 59,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 3379,
+    "margins": {
+     "left": 31,
+     "right": 33
+    },
+    "sections": [
+     {
+      "sel": "main#cards",
+      "tag": "main",
+      "top": 59,
+      "height": 466,
+      "words": 176,
+      "media": 0,
+      "middle": 46,
+      "heading": {
+       "text": "2048",
+       "size": 30,
+       "tag": "span"
+      },
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.tip-grid",
+      "tag": "div",
+      "top": 570,
+      "height": 1452,
+      "words": 411,
+      "media": 3,
+      "middle": 14,
+      "heading": {
+       "text": "Joystick",
+       "size": 13,
+       "tag": "h3"
+      },
+      "left": 31,
+      "right": 33,
+      "textLeft": 31,
+      "textRight": 33,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view.scene-view",
+      "tag": "div",
+      "top": 2037,
+      "height": 677,
+      "words": 106,
+      "media": 1,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 32,
+      "textLeft": 31,
+      "textRight": 90,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view.cam-view",
+      "tag": "div",
+      "top": 2727,
+      "height": 559,
+      "words": 21,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 804,
+      "textLeft": 31,
+      "textRight": 804,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "EMIO Motor Control",
+      "size": 16,
+      "top": 18,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 31,
+      "n": 2
+     },
+     {
+      "x": 16,
+      "n": 1
+     },
+     {
+      "x": 387,
+      "n": 1
+     },
+     {
+      "x": 743,
+      "n": 1
+     },
+     {
+      "x": 1099,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 6,
+    "bodySize": 12,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.02,
+    "voidBox": {
+     "x": 1380,
+     "y": 420,
+     "w": 60,
+     "h": 480
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "dark": false,
+    "ground": "#f5f6f8",
+    "sidebar": null,
+    "topbar": {
+     "h": 59
+    },
+    "canvas": {
+     "left": 31,
+     "right": 33
+    },
+    "hero": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "chars": 18,
+     "lines": 1,
+     "size": 16,
+     "vw": 1.1,
+     "font": "system-ui",
+     "weight": 700,
+     "tracking": 0,
+     "leading": 1.4,
+     "top": 18,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 4,
+     "firstScreen": 4,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 8,
+     "radii": [
+      [
+       10,
+       5
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       8,
+       1
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 8,
+     "tabularShare": 0,
+     "kpiMax": 30
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.68,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      30
+     ]
+    },
+    "title": {
+     "text": "EMIO Motor Control",
+     "size": 16,
+     "top": 18
+    },
+    "colourShare": 0.01
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 5,
+   "filled": [
+    0.88,
+    0.95,
+    0.89,
+    0.52,
+    0.38
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 4276,
+     "screens": 4.2,
+     "words": 847,
+     "img": 1,
+     "video": 0,
+     "canvas": 4,
+     "svg": 0,
+     "sections": 5,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "chars": 18,
+     "lines": 1,
+     "size": 16,
+     "vw": 2.1,
+     "font": "system-ui",
+     "weight": 700,
+     "tracking": 0,
+     "leading": 1.4,
+     "top": 18,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "lines": 1,
+     "size": 16,
+     "font": "system-ui"
+    },
+    "headings": [
+     {
+      "text": "2048",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 3.9,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.09,
+      "top": 169,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1748",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 3.9,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.09,
+      "top": 169,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1448",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 3.9,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.09,
+      "top": 592,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1148",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 3.9,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.09,
+      "top": 592,
+      "tag": "span",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 4,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 1,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "system-ui",
+       "share": 0.91,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.07,
+       "mono": false
+      },
+      {
+       "family": "monospace",
+       "share": 0.02,
+       "mono": true
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      30
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": {
+      "font": "system-ui",
+      "size": 12,
+      "leading": 1.4,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 4.8
+     },
+     "measureChars": 118,
+     "max": {
+      "size": 30,
+      "vw": 3.9,
+      "font": "ui-monospace",
+      "text": "2048"
+     },
+     "monoShare": 0.09,
+     "monoProseShare": 0.07,
+     "monoFamilies": [
+      "ui-monospace",
+      "monospace"
+     ],
+     "monoSamples": [
+      "45.8 rpm",
+      "2048",
+      "pulses",
+      "-10.63°",
+      "-0.1856",
+      "-3.71 mm"
+     ],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.13,
+     "centerShare": 0.09,
+     "smallText": 28
+    },
+    "eyebrows": [
+     {
+      "text": "Motor 0",
+      "above": "2048",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 136
+     },
+     {
+      "text": "Motor 1",
+      "above": "1748",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 136
+     },
+     {
+      "text": "Motor 2",
+      "above": "1448",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 558
+     },
+     {
+      "text": "Motor 3",
+      "above": "1148",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 558
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f5f6f8",
+     "bodyBgHsl": {
+      "h": 220,
+      "s": 0.18,
+      "l": 0.97
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 964,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      },
+      {
+       "color": "#f5f6f8",
+       "top": 1029,
+       "hsl": {
+        "h": 220,
+        "s": 0.18,
+        "l": 0.97
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#6b7380",
+       "share": 0.72
+      },
+      {
+       "color": "#1b1f24",
+       "share": 0.27
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      },
+      {
+       "color": "#e0533d",
+       "share": 0
+      },
+      {
+       "color": "#3d7be0",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#eef1f5",
+      "hsl": {
+       "h": 214,
+       "s": 0.26,
+       "l": 0.95
+      },
+      "fg": "#1b1f24"
+     },
+     "lowContrast": [
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 20,
+     "inHero": 11,
+     "radius": 6,
+     "height": 34,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Connect",
+      "Disconnect",
+      "Calibrate all",
+      "Hold all",
+      "TORQUE OFF ALL"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 7,
+     "hairlineSamples": [
+      "header 768px",
+      "details 330px",
+      "details 330px",
+      "details 330px",
+      "details 330px"
+     ],
+     "outlinedBoxes": 10,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 7,
+     "boxRadius": 10,
+     "squareMedia": 0,
+     "roundedMedia": 3,
+     "mediaRadius": 8,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 118
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 102,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 4276,
+    "margins": {
+     "left": 31,
+     "right": 31
+    },
+    "sections": [
+     {
+      "sel": "main#cards",
+      "tag": "main",
+      "top": 102,
+      "height": 861,
+      "words": 204,
+      "media": 0,
+      "middle": 46,
+      "heading": {
+       "text": "2048",
+       "size": 30,
+       "tag": "span"
+      },
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "div.view",
+      "tag": "div",
+      "top": 1010,
+      "height": 379,
+      "words": 23,
+      "media": 1,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 188,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view",
+      "tag": "div",
+      "top": 1402,
+      "height": 379,
+      "words": 24,
+      "media": 1,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 117,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.tip-side",
+      "tag": "div",
+      "top": 1795,
+      "height": 1013,
+      "words": 364,
+      "media": 1,
+      "middle": 0,
+      "heading": {
+       "text": "Joystick",
+       "size": 13,
+       "tag": "h3"
+      },
+      "left": 31,
+      "right": 34,
+      "textLeft": 31,
+      "textRight": 34,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view.scene-view",
+      "tag": "div",
+      "top": 2822,
+      "height": 765,
+      "words": 106,
+      "media": 1,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 32,
+      "textLeft": 31,
+      "textRight": 54,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view.cam-view",
+      "tag": "div",
+      "top": 3601,
+      "height": 549,
+      "words": 21,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 132,
+      "textLeft": 31,
+      "textRight": 132,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "EMIO Motor Control",
+      "size": 16,
+      "top": 18,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 31,
+      "n": 3
+     },
+     {
+      "x": 407,
+      "n": 2
+     },
+     {
+      "x": 16,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 6,
+    "bodySize": 12,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "dark": false,
+    "ground": "#f5f6f8",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 31,
+     "right": 31
+    },
+    "hero": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "chars": 18,
+     "lines": 1,
+     "size": 16,
+     "vw": 2.1,
+     "font": "system-ui",
+     "weight": 700,
+     "tracking": 0,
+     "leading": 1.4,
+     "top": 18,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 5,
+     "firstScreen": 5,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 8,
+     "radii": [
+      [
+       10,
+       5
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       8,
+       1
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 8,
+     "tabularShare": 0,
+     "kpiMax": 30
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.68,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      30
+     ]
+    },
+    "title": {
+     "text": "EMIO Motor Control",
+     "size": 16,
+     "top": 18
+    },
+    "colourShare": 0.011
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 7,
+   "filled": [
+    0.92,
+    0.93,
+    0.93,
+    0.83,
+    0.86,
+    0.94,
+    0.66
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 5703,
+     "screens": 6.8,
+     "words": 847,
+     "img": 1,
+     "video": 0,
+     "canvas": 4,
+     "svg": 0,
+     "sections": 5,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "chars": 18,
+     "lines": 1,
+     "size": 16,
+     "vw": 4.1,
+     "font": "system-ui",
+     "weight": 700,
+     "tracking": 0,
+     "leading": 1.4,
+     "top": 12,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "lines": 1,
+     "size": 16,
+     "font": "system-ui"
+    },
+    "headings": [
+     {
+      "text": "2048",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.18,
+      "top": 275,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1748",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.18,
+      "top": 697,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1448",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.18,
+      "top": 1120,
+      "tag": "span",
+      "kind": "heading"
+     },
+     {
+      "text": "1148",
+      "words": 1,
+      "chars": 4,
+      "lines": 1,
+      "size": 30,
+      "vw": 7.7,
+      "font": "ui-monospace",
+      "weight": 600,
+      "tracking": -0.017,
+      "leading": 1.4,
+      "upper": false,
+      "italic": false,
+      "mono": true,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.18,
+      "top": 1543,
+      "tag": "span",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 4,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 1,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "system-ui",
+       "share": 0.91,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.07,
+       "mono": false
+      },
+      {
+       "family": "monospace",
+       "share": 0.02,
+       "mono": true
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      30
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": {
+      "font": "system-ui",
+      "size": 12,
+      "leading": 1.4,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 4.8
+     },
+     "measureChars": 55,
+     "max": {
+      "size": 30,
+      "vw": 7.7,
+      "font": "ui-monospace",
+      "text": "2048"
+     },
+     "monoShare": 0.09,
+     "monoProseShare": 0.07,
+     "monoFamilies": [
+      "ui-monospace",
+      "monospace"
+     ],
+     "monoSamples": [
+      "45.8 rpm",
+      "2048",
+      "pulses",
+      "-10.63°",
+      "-0.1856",
+      "-3.71 mm"
+     ],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.13,
+     "centerShare": 0.09,
+     "smallText": 28
+    },
+    "eyebrows": [
+     {
+      "text": "Motor 0",
+      "above": "2048",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 241
+     },
+     {
+      "text": "Motor 1",
+      "above": "1748",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 664
+     },
+     {
+      "text": "Motor 2",
+      "above": "1448",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 1087
+     },
+     {
+      "text": "Motor 3",
+      "above": "1148",
+      "upper": false,
+      "tracked": false,
+      "mono": false,
+      "pill": false,
+      "size": 15,
+      "top": 1509
+     }
+    ],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f5f6f8",
+     "bodyBgHsl": {
+      "h": 220,
+      "s": 0.18,
+      "l": 0.97
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 224,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      },
+      {
+       "color": "#f5f6f8",
+       "top": 2005,
+       "hsl": {
+        "h": 220,
+        "s": 0.18,
+        "l": 0.97
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#6b7380",
+       "share": 0.72
+      },
+      {
+       "color": "#1b1f24",
+       "share": 0.27
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.01
+      },
+      {
+       "color": "#e0533d",
+       "share": 0
+      },
+      {
+       "color": "#3d7be0",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#eef1f5",
+      "hsl": {
+       "h": 214,
+       "s": 0.26,
+       "l": 0.95
+      },
+      "fg": "#1b1f24"
+     },
+     "lowContrast": [
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "XM430-W210",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      },
+      {
+       "text": "30 °C",
+       "ratio": 4.2,
+       "need": 4.5,
+       "size": 11,
+       "fg": "#6b7380",
+       "bg": "#eef1f5"
+      }
+     ]
+    },
+    "buttons": {
+     "count": 20,
+     "inHero": 7,
+     "radius": 6,
+     "height": 34,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Connect",
+      "Disconnect",
+      "Calibrate all",
+      "Hold all",
+      "TORQUE OFF ALL"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 7,
+     "hairlineSamples": [
+      "header 390px",
+      "details 328px",
+      "details 328px",
+      "details 328px",
+      "details 328px"
+     ],
+     "outlinedBoxes": 10,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 7,
+     "boxRadius": 10,
+     "squareMedia": 0,
+     "roundedMedia": 3,
+     "mediaRadius": 8,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 208,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 5703,
+    "margins": {
+     "left": 31,
+     "right": 31
+    },
+    "sections": [
+     {
+      "sel": "header",
+      "tag": "header",
+      "top": 0,
+      "height": 208,
+      "words": 19,
+      "media": 0,
+      "middle": 16,
+      "heading": {
+       "text": "EMIO Motor Control",
+       "size": 16,
+       "tag": "h1"
+      },
+      "left": 16,
+      "right": 16,
+      "textLeft": 16,
+      "textRight": 27,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": true
+     },
+     {
+      "sel": "section.card",
+      "tag": "section",
+      "top": 224,
+      "height": 407,
+      "words": 41,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "2048",
+       "size": 30,
+       "tag": "span"
+      },
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.card",
+      "tag": "section",
+      "top": 646,
+      "height": 407,
+      "words": 41,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "1748",
+       "size": 30,
+       "tag": "span"
+      },
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.card",
+      "tag": "section",
+      "top": 1069,
+      "height": 407,
+      "words": 41,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "1448",
+       "size": 30,
+       "tag": "span"
+      },
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "section.card",
+      "tag": "section",
+      "top": 1492,
+      "height": 407,
+      "words": 41,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "1148",
+       "size": 30,
+       "tag": "span"
+      },
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view",
+      "tag": "div",
+      "top": 1986,
+      "height": 398,
+      "words": 23,
+      "media": 1,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 48,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view",
+      "tag": "div",
+      "top": 2398,
+      "height": 394,
+      "words": 24,
+      "media": 1,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 41,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.tip-side",
+      "tag": "div",
+      "top": 2806,
+      "height": 1472,
+      "words": 364,
+      "media": 1,
+      "middle": 0,
+      "heading": {
+       "text": "Joystick",
+       "size": 13,
+       "tag": "h3"
+      },
+      "left": 31,
+      "right": 31,
+      "textLeft": 31,
+      "textRight": 31,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view.scene-view",
+      "tag": "div",
+      "top": 4292,
+      "height": 922,
+      "words": 106,
+      "media": 1,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 32,
+      "textLeft": 31,
+      "textRight": 37,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "div.view.cam-view",
+      "tag": "div",
+      "top": 5229,
+      "height": 281,
+      "words": 21,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 31,
+      "right": 48,
+      "textLeft": 31,
+      "textRight": 48,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": true,
+      "pinned": false
+     },
+     {
+      "sel": "p.hint",
+      "tag": "p",
+      "top": 5541,
+      "height": 150,
+      "words": 83,
+      "media": 0,
+      "middle": 0,
+      "heading": null,
+      "left": 16,
+      "right": 24,
+      "textLeft": 16,
+      "textRight": 24,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "EMIO Motor Control",
+      "size": 16,
+      "top": 12,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 31,
+      "n": 5
+     },
+     {
+      "x": 16,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 6,
+    "bodySize": 12,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "dark": false,
+    "ground": "#f5f6f8",
+    "sidebar": null,
+    "topbar": null,
+    "canvas": {
+     "left": 31,
+     "right": 31
+    },
+    "hero": {
+     "text": "EMIO Motor Control",
+     "words": 3,
+     "chars": 18,
+     "lines": 1,
+     "size": 16,
+     "vw": 4.1,
+     "font": "system-ui",
+     "weight": 700,
+     "tracking": 0,
+     "leading": 1.4,
+     "top": 12,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 5,
+     "firstScreen": 2,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 8,
+     "radii": [
+      [
+       10,
+       5
+      ],
+      [
+       0,
+       2
+      ],
+      [
+       8,
+       1
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 8,
+     "tabularShare": 0,
+     "kpiMax": 30
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.68,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      30
+     ]
+    },
+    "title": {
+     "text": "EMIO Motor Control",
+     "size": 16,
+     "top": 12
+    },
+    "colourShare": 0.024
+   },
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "WARN",
+   "id": "contrast",
+   "width": 1440,
+   "message": "Low-contrast text: \"XM430-W210\" 4.2:1 needs 4.5:1; \"30 °C\" 4.2:1 needs 4.5:1; \"XM430-W210\" 4.2:1 needs 4.5:1; \"30 °C\" 4.2:1 needs 4.5:1",
+   "fix": "Darken or lighten the text colour.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "font-count",
+   "width": 1440,
+   "message": "3 typefaces in use (system-ui, ui-monospace, monospace).",
+   "fix": "Two at most.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "tabular",
+   "width": 1440,
+   "message": "Only 0% of the figures use tabular numerals.",
+   "fix": "Set font-variant-numeric: tabular-nums on tables, KPIs and anything that updates, so digits keep their width.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "tiny-text",
+   "width": 1440,
+   "message": "68% of the text is under 13px.",
+   "fix": "Data and labels read at 13–14px; keep 11–12px for sublines and axis ticks.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "/home/alex/Documents/ME4242/Proj/.taste-skill/before/desktop-fold.jpg",
+   "pages": [
+    "/home/alex/Documents/ME4242/Proj/.taste-skill/before/desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "/home/alex/Documents/ME4242/Proj/.taste-skill/before/tablet-fold.jpg",
+   "pages": [
+    "/home/alex/Documents/ME4242/Proj/.taste-skill/before/tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "/home/alex/Documents/ME4242/Proj/.taste-skill/before/mobile-fold.jpg",
+   "pages": [
+    "/home/alex/Documents/ME4242/Proj/.taste-skill/before/mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

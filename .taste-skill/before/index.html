@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMIO Motor Control</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1b1f24; --muted: #6b7380; --line: #dde1e6;
+    --accent: #2563eb; --ok: #15803d; --warn: #b45309; --danger: #dc2626; --chip: #eef1f5;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --card: #171b21; --text: #e6e9ee; --muted: #8c95a3; --line: #2a3039;
+      --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --danger: #f87171; --chip: #222831;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 1px solid var(--line);
+           padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  h1 { font-size: 16px; margin: 0 8px 0 0; white-space: nowrap; }
+  .status { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); }
+  .grow { flex: 1; }
+  select, input[type=number] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+           border-radius: 6px; padding: 5px 7px; }
+  input[type=number] { width: 80px; font-family: var(--mono); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--text);
+           border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+  .speed { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger);
+           padding: 8px 16px; display: none; }
+  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card.offline { opacity: .5; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
+  .card-head h2, .chip { white-space: nowrap; }
+  .card-head h2 { font-size: 15px; margin: 0; }
+  .chip { font-size: 11px; padding: 2px 7px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+  .chip.moving { color: var(--accent); }
+  .chip.uncal { color: var(--warn); }
+  .chip.err { color: #fff; background: var(--danger); }
+  .switch { margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+  .switch input { width: 36px; height: 20px; accent-color: var(--ok); cursor: pointer; }
+  .big { font-family: var(--mono); font-size: 30px; font-weight: 600; letter-spacing: -.5px; }
+  .big small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .readouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin: 8px 0 12px; }
+  .readouts div { display: flex; flex-direction: column; }
+  .readouts span:first-child { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .readouts span:last-child { font-family: var(--mono); font-size: 14px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .clampnote { color: var(--warn); font-family: inherit; }
+  .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .row button { padding: 6px 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+  details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); }
+  .settings { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; }
+  .hint { color: var(--muted); font-size: 12px; padding: 0 16px 16px; }
+  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .tip-panel { margin: 0 16px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .tip-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+  .tip-head h2 { font-size: 15px; margin: 0 6px 0 0; }
+  .chip.live { color: var(--ok); }
+  .tip-grid { display: grid; gap: 14px; grid-template-columns: minmax(280px, 1.35fr) minmax(240px, 1fr) minmax(230px, .8fr); }
+  @media (max-width: 1000px) { .tip-grid { grid-template-columns: 1fr; } }
+  .view { display: flex; flex-direction: column; gap: 4px; }
+  .view-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .view canvas { width: 100%; height: 340px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+  #tipTop { cursor: crosshair; }
+  .tip-side { display: flex; flex-direction: column; gap: 10px; }
+  .cam-view { margin-top: 14px; }
+  .cam-box { position: relative; width: 100%; max-width: 720px; aspect-ratio: 4 / 3; background: var(--bg);
+             border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
+  .cam-box img { width: 100%; height: 100%; object-fit: contain; display: none; }
+  .cam-box.live img { display: block; }
+  .cam-box.live .cam-note { display: none; }
+  .cam-note { color: var(--muted); padding: 16px; text-align: center; }
+  .tip-side .readouts { grid-template-columns: repeat(2, 1fr); margin: 0; }
+  .tip-status { font-size: 13px; min-height: 2.8em; }
+  .tip-status b { text-transform: capitalize; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
+  .joy-box { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .joy-box h3 { font-size: 13px; margin: 0; }
+  .joy-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #joyStick { width: 150px; height: 150px; flex: none; touch-action: none; cursor: grab; user-select: none; }
+  #joyStick.dragging { cursor: grabbing; }
+  .chip.on { color: #fff; background: var(--ok); }
+  .cam-box.picking { cursor: crosshair; outline: 2px solid var(--warn); }
+  .obs-box input[type=number] { width: 64px; }
+  .scene-view { margin-top: 14px; }
+  .scene-box { position: relative; width: 100%; height: 560px; border: 1px solid var(--line); border-radius: 8px;
+               overflow: hidden; background: var(--bg); }
+  .scene-box canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+  .scene-hover { position: absolute; left: 8px; bottom: 6px; font: 12px var(--mono); color: var(--muted); pointer-events: none; }
+  .scene-tools { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 13px; }
+  .scene-tools input[type=number] { width: 64px; }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>EMIO Motor Control</h1>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">Disconnected</span></div>
+  <select id="port" title="Serial port"><option value="">auto (first FTDI)</option></select>
+  <button id="connect" class="primary">Connect</button>
+  <button id="disconnect">Disconnect</button>
+  <div class="speed">Speed
+    <input type="range" id="speed" min="5" max="200" step="5" style="width:90px">
+    <span id="speedval" style="font-family:var(--mono);min-width:64px"></span>
+  </div>
+  <div class="grow"></div>
+  <button id="calall" title="Set every motor's current position as 0">Calibrate all</button>
+  <button id="hold" title="Set every powered motor's goal to its current position">Hold all</button>
+  <button id="off" class="danger" title="Esc">TORQUE OFF ALL</button>
+</header>
+<div class="error" id="error"></div>
+<main id="cards"></main>
+<section class="tip-panel" id="tipPanel">
+  <div class="tip-head">
+    <h2>Tip control</h2>
+    <span class="chip" id="tipModelChip">no model</span>
+    <span class="chip" id="tipFeedChip">camera feed off</span>
+  </div>
+  <div class="tip-grid">
+    <div class="view">
+      <span class="view-title">Top view (x, z) — click to set a target</span>
+      <canvas id="tipTop"></canvas>
+      <div class="legend"><span><i style="background:var(--ok)"></i>tip (camera)</span>
+        <span><i style="border:2px solid var(--muted);width:6px;height:6px"></i>tip (model, from motor angles)</span>
+        <span><i style="background:var(--danger)"></i>target</span>
+        <span><i style="border:2px solid var(--warn);width:6px;height:6px"></i>gamepad target</span><span>shaded: reachable area</span>
+        <span id="obsBarsLegend" hidden>thin coloured lines / outlines: rods and objects found by colour (not avoided)</span>
+        <span id="obsLegend" hidden><i style="background:var(--danger);border-radius:0"></i>marked rod ·
+          <i style="background:color-mix(in srgb, var(--danger) 45%, transparent);border-radius:0"></i>arm would touch it ·
+          <i style="background:color-mix(in srgb, var(--warn) 35%, transparent);border-radius:0"></i>within clearance ·
+          dashed: planned path</span></div>
+    </div>
+    <div class="view">
+      <span class="view-title">Side view (bending plane)</span>
+      <canvas id="tipSide"></canvas>
+      <div class="legend" id="tipBend">—</div>
+    </div>
+    <div class="tip-side">
+      <div class="row" style="margin:0">
+        <label>X <input type="number" id="tipX" step="1"></label>
+        <label>Z <input type="number" id="tipZ" step="1"></label> mm
+      </div>
+      <label><input type="checkbox" id="tipClosed" checked> Correct with camera (closed loop)</label>
+      <label><input type="checkbox" id="tipClick" checked> Move when I click the top view</label>
+      <div class="row" style="margin:0">
+        <button class="primary" id="tipGo">Move tip</button>
+        <button id="tipStop">Stop</button>
+      </div>
+      <div class="tip-status" id="tipStatus">Idle</div>
+      <div class="readouts">
+        <div><span>Tip (camera)</span><span id="tipMeas">—</span></div>
+        <div><span>Tip (model)</span><span id="tipPred">—</span></div>
+        <div><span>Height y</span><span id="tipY">—</span></div>
+        <div><span>Bend dA / dB</span><span id="tipPose">—</span></div>
+      </div>
+      <div class="joy-box">
+        <div class="joy-row"><h3>Joystick</h3><span class="chip" id="joyPad">on-screen stick (no gamepad)</span>
+          <span class="chip" id="joyEnable">released</span></div>
+        <div class="joy-row">
+          <canvas id="joyStick"></canvas>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label>Stick moves <select id="joyMode"><option value="tip">the tip (top-view direction)</option>
+              <option value="bend">the motors (push toward a motor to pull it)</option></select></label>
+            <label>Stick control <select id="joyControl"><option value="rate">jog: deflection = speed</option>
+              <option value="position">position: deflection = where to go</option></select></label>
+            <span><label><input type="checkbox" id="joyInvX"> invert x</label>
+              <label><input type="checkbox" id="joyInvY"> invert y</label></span>
+          </div>
+        </div>
+        <div class="joy-row">
+          <button class="primary" id="joyStart">Start joystick control</button>
+          <button id="joyStop">Stop</button>
+        </div>
+        <div class="tip-status" id="joyStatus" style="min-height:1.4em"></div>
+        <span class="hint" style="padding:0"><b>Jog</b> (default): push to keep the target moving that way, faster the
+          further you push; let go and it stays put, the next push continues from there.
+          <b>Position</b>: the stick points at a spot (full deflection = edge of reach). <b>On-screen:</b> drag the stick with the mouse or a finger; let go to hold.
+          <b>Gamepad:</b> left stick steers, hold <b>RT / R2</b> (or RB / R1) to move, <b>B / Circle</b> = torque off all
+          (press any gamepad button first so the browser sees it). Moves follow the same pair rules and current limits.</span>
+      </div>
+      <div class="joy-box obs-box">
+        <div class="joy-row"><h3>Obstacles</h3><span class="chip" id="obsChip">no rod</span></div>
+        <div class="tip-status" id="obsBars" style="min-height:1.4em"></div>
+        <label><input type="checkbox" id="obsAvoid"> Plan moves around it, arm at least
+          <input type="number" id="obsClearance" min="0" max="100" step="1"> mm clear</label>
+        <div class="readouts" style="grid-template-columns:repeat(2,1fr);margin:0">
+          <div><span>Arm clearance (model)</span><span id="obsClrModel">—</span></div>
+          <div><span>Arm clearance (camera)</span><span id="obsClrCam">—</span></div>
+        </div>
+        <div class="joy-row">
+          <button id="obsPick" title="Then click a rod in the camera view; only that colour is looked for until Forget">Pick rod colour</button>
+          <button id="obsMark" title="Then click the rod's two ends in the camera view (any colour)">Mark rod ends</button>
+          <button id="obsForget" title="Forget the marked rod, the detected rods and a picked colour">Forget rods</button>
+        </div>
+        <div class="tip-status" id="obsStatus" style="min-height:1.4em"></div>
+        <span class="hint" style="padding:0">tip_feed.py finds the <b>orange</b> and <b>red</b> rods by itself (or the
+          colour you pick), and other objects of those colours or <b>green</b> (a tray, a piece: shape, size and the surface the
+          camera sees; touching pieces are split; a tray's shaped pockets are found from depth),
+          and measures them with the depth camera; they are shown in the views but <b>not avoided</b>.
+          <b>Mark rod ends</b> works for any colour (e.g. the grey prototype): click both ends in the camera view; it stays
+          until you press Forget, and only this rod is avoided. Moves to a target then follow a path that
+          keeps the whole arm (constant-curvature model) clear of the rod, curling it over the rod when that is the only way
+          round, and the joystick slides along the rod instead of pushing into it. Clearance is from the arm's centreline to
+          the rod's surface: allow for the disc radius plus the model error (±10 mm).</span>
+      </div>
+      <p class="hint" style="padding:0;margin:0">Needs a fitted model (<code>fit_tip_model.py</code>) and, for closed loop,
+        the camera feed (<code>~/emio-venv/bin/python tip_feed.py</code>). Moves follow the pair rules
+        (one cable of each opposing pair pulls at a time). Stop / Esc / TORQUE OFF ALL interrupt a move.</p>
+    </div>
+  </div>
+  <div class="view scene-view">
+    <span class="view-title">3D view — drag to orbit, right-drag to pan, scroll to zoom; double-click the tip surface to
+      preview a move there</span>
+    <div class="scene-tools">
+      <label><input type="checkbox" id="sceneCloud" checked> camera point cloud</label>
+      <label>within <input type="number" id="sceneCrop" value="250" min="0" step="25"> mm of the arm (0 = all)</label>
+      <label><input type="checkbox" id="sceneSurface" checked> tip surface</label>
+      <label><input type="checkbox" id="sceneZone" checked> clearance zone</label>
+      <label><input type="checkbox" id="sceneArmCam" checked> arm from camera</label>
+      <label><input type="checkbox" id="scenePath" checked> planned path</label>
+      <span class="row" style="margin:0"><button id="sceneFront">Front</button><button id="sceneTop">Top</button>
+        <button id="sceneCam" title="From the depth camera's position, to compare with the live image" disabled>Camera's view</button>
+        <button id="scenePlay" disabled title="Animate the arm along the planned path">Play path</button></span>
+    </div>
+    <div class="scene-box" id="sceneBox"><canvas id="sceneCanvas"></canvas><span class="scene-hover" id="sceneHover"></span>
+      <span class="cam-note" id="sceneNote" style="position:absolute;inset:0;display:none;place-items:center">Needs a fitted tip model
+        (<code>fit_tip_model.py</code>)</span></div>
+    <div class="legend"><span><i style="background:var(--accent)"></i>arm (model, from motor angles)</span>
+      <span><i style="background:var(--ok)"></i>arm through the tracked tip (camera)</span>
+      <span><i style="background:var(--warn)"></i>marked rod · faint: clearance zone · rods and objects found by colour in their colour (not avoided)</span>
+      <span><i style="background:color-mix(in srgb, var(--accent) 40%, transparent);border-radius:0"></i>tip surface (tip-mode reach),
+        <i style="background:var(--warn);border-radius:0"></i>arm within clearance, <i style="background:var(--danger);border-radius:0"></i>arm touches rod</span>
+      <span><i style="background:var(--danger)"></i>target · dashed: tip path, faint arms: shapes along it</span>
+      <span>points: depth camera (large: obstacle colour) · arrows: <span style="color:#e0533d">+x</span>
+        <span style="color:#3d7be0">+z</span></span> <span id="sceneCloudInfo" hidden></span></div>
+    <div class="tip-status" id="sceneMsg" style="min-height:1.4em"></div>
+  </div>
+  <div class="view cam-view">
+    <span class="view-title" id="camTitle">Camera (live) — tracked marker outlined, rod colours in magenta, found rods in their colour</span>
+    <div class="cam-box" id="camBox"><img id="camImg" alt="Live camera view">
+      <span class="cam-note" id="camNote">Camera view off: run <code>~/emio-venv/bin/python tip_feed.py</code></span></div>
+  </div>
+</section>
+<p class="hint">Torque must be on before a motor will move. Turning torque on holds the current position.
+  Commands are clamped to the soft limits and the motor's firmware limits. Angles use the emioapi convention
+  (pulse 2048 = 0°) until you calibrate; after that, angle, goal, slider and jog are relative to the
+  calibrated 0 (stored in data/settings.json; the motor itself is not changed). "Absolute" is the emioapi angle.
+  Cable displacement = (angle − zero) × drum radius. <kbd>Esc</kbd> = torque off all.</p>
+
+<template id="card-tpl">
+  <section class="card">
+    <div class="card-head">
+      <h2></h2><span class="chip model"></span><span class="chip moving" style="visibility:hidden">moving</span>
+      <span class="chip uncal" hidden title="Angles are relative to emioapi's zero (pulse 2048) until calibrated">uncalibrated</span>
+      <span class="chip err" hidden></span>
+      <span class="chip err override" hidden title="This motor's goal was changed by another program on the motor bus, e.g. an Emio Labs / SOFA scene with Robot connection on. Close it.">overridden by another program</span>
+      <label class="switch"><input type="checkbox" class="torque"><span>Torque</span></label>
+    </div>
+    <div class="big"><span class="pulse">—</span><small>pulses</small></div>
+    <div class="readouts">
+      <div><span>Angle</span><span class="deg">—</span></div>
+      <div><span>Radians</span><span class="rad">—</span></div>
+      <div><span>Cable</span><span class="cable">—</span></div>
+      <div><span>Goal</span><span class="goal">—</span></div>
+      <div><span>Velocity</span><span class="vel">—</span></div>
+      <div><span>Current</span><span class="cur">—</span></div>
+      <div><span>Absolute</span><span class="abs">—</span></div>
+      <div><span>Zero at</span><span class="zeroat">—</span></div>
+    </div>
+    <input type="range" class="slider" step="0.1">
+    <div class="range-labels"><span class="lo"></span><span class="clampnote" hidden>at limit: command clamped</span><span class="hi"></span></div>
+    <div class="row">
+      <button data-jog="-5">−5°</button><button data-jog="-1">−1°</button>
+      <button data-jog="1">+1°</button><button data-jog="5">+5°</button>
+      <input type="number" class="target" step="0.1" style="width:62px" title="Target angle (deg)"><button class="go">Go</button>
+    </div>
+    <div class="row">
+      <button class="reboot danger" hidden title="Clears the hardware error. Release any cable tension first: the motor comes back with torque off.">Reboot motor</button>
+      <button class="zero" title="Calibrate: the current position becomes 0 (angle and cable displacement)">Calibrate: set 0 here</button>
+      <span class="chip temp"></span>
+    </div>
+    <details>
+      <summary>Settings</summary>
+      <div class="settings">
+        <label>Drum radius (mm)</label><input type="number" class="radius" step="0.1" min="0.1">
+        <label>Invert cable sign</label><input type="checkbox" class="invert">
+        <label>Soft min (° absolute)</label><input type="number" class="smin" step="1">
+        <label>Soft max (° absolute)</label><input type="number" class="smax" step="1">
+        <span></span><div class="row" style="margin:0"><button class="save">Save</button><button class="clearzero">Clear calibration</button></div>
+      </div>
+    </details>
+  </section>
+</template>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const deg = r => r * 180 / Math.PI, rad = d => d * Math.PI / 180;
+const goalFor = (i, a) => api(`/api/motor/${i}/goal`, { angle_rad: a, relative: true })
+  .then(r => { if (r.clamped) flashClamp(i); }).catch(() => {});
+function flashClamp(i) {
+  const n = $(".clampnote", cards[i].el); n.hidden = false;
+  clearTimeout(cards[i].clampTimer); cards[i].clampTimer = setTimeout(() => n.hidden = true, 2500);
+}
+// Hardware Error Status bits, see https://emanual.robotis.com/docs/en/dxl/x/xm430-w210/#hardware-error-status
+const HW_ERRORS = { 1: "input voltage", 4: "overheating", 8: "encoder", 16: "electrical shock", 32: "overload" };
+const hwText = e => Object.entries(HW_ERRORS).filter(([b]) => e & b).map(([, t]) => t).join(", ") || `code ${e}`;
+const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : v.toFixed(d);
+let state = null;
+const cards = [];
+
+async function api(path, body) {
+  const res = await fetch(path, { method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { showError(data.detail ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : res.statusText); throw data; }
+  return data;
+}
+function showError(msg) { const e = $("#error"); e.textContent = msg; e.style.display = msg ? "block" : "none"; }
+
+function throttle(fn, ms) {
+  let last = 0, timer = null, args;
+  return (...a) => { args = a; const now = Date.now();
+    if (now - last >= ms) { last = now; fn(...args); }
+    else { clearTimeout(timer); timer = setTimeout(() => { last = Date.now(); fn(...args); }, ms - (now - last)); } };
+}
+
+for (let i = 0; i < 4; i++) {
+  const el = $("#card-tpl").content.firstElementChild.cloneNode(true);
+  $("h2", el).textContent = `Motor ${i}`;
+  const c = { el, dragging: false, settingsLoaded: false };
+  const sendGoal = throttle(d => goalFor(i, rad(d)), 60);
+  const slider = $(".slider", el);
+  slider.addEventListener("pointerdown", () => c.dragging = true);
+  slider.addEventListener("input", () => sendGoal(+slider.value));
+  $(".torque", el).addEventListener("change", e => api(`/api/motor/${i}/torque`, { on: e.target.checked }).then(() => showError("")).catch(() => {}));
+  el.querySelectorAll("[data-jog]").forEach(b => b.addEventListener("click", () => {
+    const m = state.motors[i], base = m.goal_rel_rad ?? m.angle_rel_rad;
+    goalFor(i, base + rad(+b.dataset.jog));
+  }));
+  $(".go", el).addEventListener("click", () => goalFor(i, rad(+$(".target", el).value)));
+  $(".reboot", el).addEventListener("click", () => {
+    if (confirm(`Reboot motor ${i}? Release cable tension first. It restarts with torque off.`))
+      api(`/api/motor/${i}/reboot`, {}).then(() => showError("")).catch(() => {});
+  });
+  $(".zero", el).addEventListener("click", () => api(`/api/motor/${i}/zero`, {}).catch(() => {}));
+  $(".save", el).addEventListener("click", () => api(`/api/motor/${i}/settings`, {
+    radius_mm: +$(".radius", el).value, invert: $(".invert", el).checked,
+    min_deg: +$(".smin", el).value, max_deg: +$(".smax", el).value }).then(() => showError("")).catch(() => {}));
+  $(".clearzero", el).addEventListener("click", () => api(`/api/motor/${i}/settings`, { clear_zero: true }).catch(() => {}));
+  $("#cards").appendChild(el);
+  cards.push(c);
+}
+
+let uiVersion = null;
+function render(s) {
+  state = s;
+  // the GUI was updated: reload to get the new page (not while joystick control is on)
+  if (uiVersion && s.ui_version && s.ui_version !== uiVersion && !(s.tip && s.tip.joy && s.tip.joy.active)) location.reload();
+  uiVersion = uiVersion || s.ui_version;
+  renderTip(s);
+  $("#dot").classList.toggle("on", s.connected);
+  $("#status").textContent = s.connected ? `Connected · ${s.port}${s.mock ? " (simulated)" : ""}` : "Disconnected";
+  if (s.error && !s.connected) showError(s.error);
+  const sp = $("#speed");
+  if (document.activeElement !== sp) sp.value = s.profile_velocity;
+  $("#speedval").textContent = `${(sp.value * 0.229).toFixed(1)} rpm`;
+  s.motors.forEach((m, i) => {
+    const { el } = cards[i], c = cards[i];
+    el.classList.toggle("offline", !m.online);
+    $(".model", el).textContent = m.online ? (m.model || "") : (s.connected ? "no response" : "offline");
+    $(".moving", el).style.visibility = m.moving ? "visible" : "hidden";  // keep its space: no layout jumps
+    $(".override", el).hidden = !m.overridden;
+    const err = $(".err", el); err.hidden = !m.hw_error; err.textContent = m.hw_error ? `HW error ${m.hw_error}: ${hwText(m.hw_error)}` : "";
+    $(".reboot", el).hidden = !m.hw_error;
+    $(".pulse", el).textContent = m.online ? m.pulse : "—";
+    const zero = m.settings.zero_rad ?? 0;
+    $(".uncal", el).hidden = m.calibrated || !m.online;
+    $(".deg", el).textContent = m.online ? `${fmt(deg(m.angle_rel_rad), 2)}°` : "—";
+    $(".rad", el).textContent = m.online ? fmt(m.angle_rel_rad, 4) : "—";
+    $(".cable", el).textContent = m.cable_mm !== undefined ? `${fmt(m.cable_mm, 2)} mm` : "—";
+    $(".goal", el).textContent = m.online && m.goal_rel_rad !== null ? `${fmt(deg(m.goal_rel_rad), 1)}°` : "—";
+    $(".abs", el).textContent = m.online ? `${fmt(deg(m.angle_rad), 2)}°` : "—";
+    $(".zeroat", el).textContent = m.calibrated ? `${fmt(deg(zero), 2)}° abs` : "not set";
+    $(".vel", el).textContent = m.online ? `${fmt(m.velocity_rpm, 1)} rpm` : "—";
+    $(".cur", el).textContent = !m.online ? "—" : m.ma_per_unit ? `${fmt(m.current_raw * m.ma_per_unit, 0)} mA` : `${m.current_raw} u`;
+    $(".temp", el).textContent = m.online && m.temp_c !== null ? `${m.temp_c} °C` : "";
+    const tq = $(".torque", el); tq.checked = !!m.torque; tq.disabled = !m.online || (!!m.hw_error && !m.torque);
+    const [lo, hi] = m.limits_rad.map(r => deg(r - zero));
+    const slider = $(".slider", el);
+    slider.min = lo; slider.max = hi;
+    $(".lo", el).textContent = `${Math.round(lo) || 0}°`; $(".hi", el).textContent = `${Math.round(hi) || 0}°`;
+    if (!c.dragging && m.online) slider.value = deg(m.torque && m.goal_rel_rad !== null ? m.goal_rel_rad : m.angle_rel_rad);
+    const canMove = m.online && m.torque;
+    slider.disabled = !canMove;
+    el.querySelectorAll("[data-jog], .go").forEach(b => b.disabled = !canMove);
+    $(".zero", el).disabled = !m.online;
+    if (!c.settingsLoaded || !el.querySelector("details").open) {
+      $(".radius", el).value = m.settings.radius_mm; $(".invert", el).checked = m.settings.invert;
+      $(".smin", el).value = m.settings.min_deg; $(".smax", el).value = m.settings.max_deg;
+      c.settingsLoaded = true;
+    }
+  });
+}
+
+function connectWs() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onmessage = e => render(JSON.parse(e.data));
+  ws.onclose = () => { $("#dot").classList.remove("on"); $("#status").textContent = "Server unreachable — retrying"; setTimeout(connectWs, 1000); };
+}
+
+async function loadPorts() {
+  const ports = await api("/api/ports").catch(() => []);
+  const sel = $("#port"), cur = sel.value;
+  sel.innerHTML = '<option value="">auto (first FTDI)</option>' +
+    ports.map(p => `<option value="${p.device}">${p.device}${p.emio ? " · EMIO" : ""}</option>`).join("");
+  sel.value = cur;
+}
+
+$("#connect").addEventListener("click", () => api("/api/connect", { port: $("#port").value || null }).then(() => showError("")).catch(() => {}));
+$("#disconnect").addEventListener("click", () => api("/api/disconnect", {}).catch(() => {}));
+$("#calall").addEventListener("click", () => {
+  if (confirm("Set the current position of every motor as 0?")) api("/api/zero_all", {}).then(() => showError("")).catch(() => {});
+});
+$("#hold").addEventListener("click", () => api("/api/hold", {}).catch(() => {}));
+$("#off").addEventListener("click", () => api("/api/torque_off_all", {}).catch(() => {}));
+$("#speed").addEventListener("change", e => api("/api/speed", { profile_velocity: +e.target.value }).catch(() => {}));
+$("#speed").addEventListener("input", e => $("#speedval").textContent = `${(e.target.value * 0.229).toFixed(1)} rpm`);
+$("#port").addEventListener("focus", loadPorts);
+document.addEventListener("pointerup", () => cards.forEach(c => c.dragging = false));
+document.addEventListener("keydown", e => { if (e.key === "Escape") api("/api/torque_off_all", {}).catch(() => {}); });
+
+// ---------------- Tip control ----------------
+let tipModel = null, tipTarget = null, tipView = null;
+const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+async function loadTipModel() {
+  try { const r = await fetch("/api/tip/model"); tipModel = r.ok ? await r.json() : null; } catch { tipModel = null; }
+  if (tipModel && tipModel.motor_dirs_deg) setView(tipModel.motor_dirs_deg);
+}
+
+// Physical orientation: the top view and the stick follow the robot's layout, motor 1 top left, motor 0 top right,
+// motor 2 bottom left, motor 3 bottom right. view maps camera (x, z) <-> screen (u right, v up); it is set from the
+// directions the model says each motor bends the tip, so it stays right after a refit or camera recalibration.
+const LAYOUT_DEG = [45, 135, 225, 315];  // screen direction of motors 0..3 (0 = right, counterclockwise)
+let view = { u: (x, z) => x, v: (x, z) => z, x: (u, v) => u, z: (u, v) => v };
+function setView(dirs) {
+  const wrap = a => ((a % 360) + 540) % 360 - 180;
+  const s = Math.sign(wrap(dirs[1] - dirs[0])) * Math.sign(wrap(LAYOUT_DEG[1] - LAYOUT_DEG[0])) || 1;  // -1: mirrored
+  const o = (LAYOUT_DEG[0] - s * dirs[0]) * Math.PI / 180, c = Math.cos(o), n = Math.sin(o);  // screen angle = s * camera angle + o
+  view = s > 0
+    ? { u: (x, z) => c * x - n * z, v: (x, z) => n * x + c * z, x: (u, v) => c * u + n * v, z: (u, v) => -n * u + c * v }
+    : { u: (x, z) => c * x + n * z, v: (x, z) => n * x - c * z, x: (u, v) => c * u + n * v, z: (u, v) => n * u - c * v };
+}
+// motor-pair stick: pushing toward a motor (in the layout) pulls it; straight between two pulls both
+function stickToPairs(x, y) {
+  const r = LAYOUT_DEG.map(a => a * Math.PI / 180);
+  return [x * Math.cos(r[0]) + y * Math.sin(r[0]), x * Math.cos(r[1]) + y * Math.sin(r[1])];  // A (motor 0 / 2), B (1 / 3)
+}
+
+function setupCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  return { g, w, h };
+}
+
+// world box -> canvas transform with equal aspect; y up
+function fitView(w, h, x0, x1, y0, y1, pad = 28) {
+  const k = Math.min((w - 2 * pad) / (x1 - x0), (h - 2 * pad) / (y1 - y0));
+  const ox = (w - k * (x1 - x0)) / 2 - k * x0, oy = (h + k * (y1 - y0)) / 2 + k * y0;
+  return { k, px: x => ox + k * x, py: y => oy - k * y, wx: px => (px - ox) / k, wy: py => (oy - py) / k };
+}
+
+function dot(g, x, y, r, fill, stroke) {
+  g.beginPath(); g.arc(x, y, r, 0, 2 * Math.PI);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = 2; g.stroke(); }
+}
+
+function drawTop(t) {
+  const cv = $("#tipTop"), { g, w, h } = setupCanvas(cv), muted = cssVar("--muted"), line = cssVar("--line");
+  if (!tipModel) { g.fillStyle = muted; g.font = "13px system-ui"; g.fillText("No tip model: run fit_tip_model.py", 16, 24); tipView = null; return; }
+  const pts = tipModel.outline.concat(tipModel.samples);
+  const us = pts.map(([x, z]) => view.u(x, z)), vs = pts.map(([x, z]) => view.v(x, z));
+  const v = tipView = fitView(w, h, Math.min(...us) - 15, Math.max(...us) + 15, Math.min(...vs) - 15, Math.max(...vs) + 15);
+  const P = (x, z) => [v.px(view.u(x, z)), v.py(view.v(x, z))];  // camera (x, z) -> canvas pixel
+  g.strokeStyle = line; g.lineWidth = 1; g.font = "11px system-ui"; g.fillStyle = muted;
+  for (let a = -300; a <= 300; a += 50) {           // 50 mm grid
+    g.beginPath(); g.moveTo(v.px(a), 0); g.lineTo(v.px(a), h); g.moveTo(0, v.py(a)); g.lineTo(w, v.py(a)); g.stroke();
+  }
+  g.font = "600 12px system-ui";                      // motors in the corners, as laid out on the robot
+  LAYOUT_DEG.forEach((a, i) => {
+    const right = Math.cos(a * Math.PI / 180) > 0, top = Math.sin(a * Math.PI / 180) > 0;
+    g.textAlign = right ? "right" : "left";
+    g.fillText(`motor ${i}`, right ? w - 6 : 6, top ? 16 : h - 8);
+  });
+  g.textAlign = "center"; g.font = "11px system-ui"; g.fillText("50 mm grid", w / 2, h - 8);
+  const cx = w / 2, cy = 30;                          // camera axes, for the X / Z boxes
+  [["x", 1, 0], ["z", 0, 1]].forEach(([name, ex, ez]) => {
+    const du = view.u(ex, ez), dv = view.v(ex, ez);
+    g.strokeStyle = muted; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + 14 * du, cy - 14 * dv); g.stroke();
+    g.fillText(`+${name}`, cx + 24 * du, cy - 24 * dv + 4);
+  });
+  g.textAlign = "left";
+  g.beginPath(); tipModel.outline.forEach(([x, z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z)));
+  g.closePath(); g.fillStyle = cssVar("--accent") + "22"; g.fill(); g.strokeStyle = cssVar("--accent") + "88"; g.stroke();
+  g.fillStyle = muted + "99"; tipModel.samples.forEach(([x, z]) => { const [px, py] = P(x, z); g.fillRect(px - 1, py - 1, 2, 2); });
+  const o = t.obstacle;
+  if (o && o.objects) o.objects.forEach(ob => {  // objects found by colour, seen from above: shown, not avoided
+    const c = rodColour(ob.colour);
+    g.beginPath(); ob.outline.forEach(([x, , z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z))); g.closePath();
+    g.fillStyle = c + "44"; g.fill(); g.strokeStyle = c; g.lineWidth = 1.5; g.stroke(); g.lineWidth = 1;
+    (ob.pockets || []).forEach(pk => {  // shaped holes, dashed
+      g.setLineDash([3, 3]); g.beginPath(); pk.outline.forEach(([x, , z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z)));
+      g.closePath(); g.stroke(); g.setLineDash([]);
+    });
+    const [cx, cy] = P(ob.centre[0], ob.centre[2]);
+    g.fillStyle = c; g.font = "11px system-ui"; g.textAlign = "center"; g.fillText(ob.shape, cx, cy + 4); g.textAlign = "left";
+  });
+  if (o && o.rods) o.rods.forEach(r => {  // found by colour: shown, not avoided
+    const [ax, ay] = P(r.p0[0], r.p0[2]), [bx, by] = P(r.p1[0], r.p1[2]);
+    g.strokeStyle = rodColour(r.colour) + "bb"; g.lineCap = "round"; g.lineWidth = Math.max(2, 2 * r.radius * v.k);
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.lineCap = "butt"; g.lineWidth = 1;
+  });
+  if (o && o.rod) {
+    if (obsMap && obsMap.version === o.version && obsMap.rod) {  // tip positions where the arm would be too close
+      const sz = Math.max(3, obsMap.step_mm * v.k);
+      [[obsMap.near, cssVar("--warn") + "55"], [obsMap.hit, cssVar("--danger") + "77"]].forEach(([pts, c]) => {
+        g.fillStyle = c; pts.forEach(([x, z]) => { const [px, py] = P(x, z); g.fillRect(px - sz / 2, py - sz / 2, sz, sz); });
+      });
+    }
+    const r = o.rod, [ax, ay] = P(r.p0[0], r.p0[2]), [bx, by] = P(r.p1[0], r.p1[2]);
+    g.strokeStyle = cssVar("--danger"); g.lineCap = "round"; g.lineWidth = Math.max(3, 2 * r.radius * v.k);
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.lineCap = "butt"; g.lineWidth = 1;
+    g.fillStyle = cssVar("--danger"); g.font = "11px system-ui";
+    g.fillText(`marked rod, y ${((r.p0[1] + r.p1[1]) / 2).toFixed(0)}`, (ax + bx) / 2 + 8, (ay + by) / 2 - 8);
+  }
+  if (o && o.plan_xz && o.plan_xz.length > 1) {
+    g.setLineDash([6, 4]); g.strokeStyle = cssVar("--accent"); g.lineWidth = 2; g.beginPath();
+    o.plan_xz.forEach(([x, z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z))); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
+  }
+  const [bpx, bpy] = P(tipModel.base[0], tipModel.base[2]);  // arm attachment, seen from above
+  g.strokeStyle = muted; g.beginPath(); g.moveTo(bpx - 6, bpy); g.lineTo(bpx + 6, bpy);
+  g.moveTo(bpx, bpy - 6); g.lineTo(bpx, bpy + 6); g.stroke();
+  const target = t.joy && t.joy.active ? null : (t.status.target || tipTarget);
+  const meas = t.feed && t.feed.markers ? [t.feed.x, t.feed.z] : null;
+  if (target && meas) { g.setLineDash([4, 4]); g.strokeStyle = muted; g.beginPath(); g.moveTo(...P(...meas)); g.lineTo(...P(...target)); g.stroke(); g.setLineDash([]); }
+  if (t.joy && t.joy.active && t.joy.target_xz) {
+    const [x, y] = P(...t.joy.target_xz);
+    dot(g, x, y, 8, null, cssVar("--warn")); dot(g, x, y, 2, cssVar("--warn"));
+  }
+  if (t.predicted) dot(g, ...P(t.predicted[0], t.predicted[2]), 6, null, muted);
+  if (meas) dot(g, ...P(...meas), 6, cssVar("--ok"));
+  if (target) {
+    const [x, y] = P(...target), d = cssVar("--danger");
+    g.strokeStyle = d; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 9, y); g.lineTo(x + 9, y); g.moveTo(x, y - 9); g.lineTo(x, y + 9); g.stroke();
+    dot(g, x, y, 3, d);
+  }
+}
+
+function drawSide(t) {
+  const cv = $("#tipSide"), { g, w, h } = setupCanvas(cv), muted = cssVar("--muted");
+  if (!tipModel) { $("#tipBend").textContent = "—"; return; }
+  const [bx, by, bz] = tipModel.base, L = tipModel.length_mm, platformY = -233;
+  const v = fitView(w, h, -0.25 * L, 1.1 * L, platformY - 10, by + 20);
+  g.strokeStyle = cssVar("--line"); g.lineWidth = 1; g.beginPath(); g.moveTo(v.px(-1e3), v.py(by)); g.lineTo(v.px(0), v.py(by)); g.stroke();
+  g.strokeStyle = muted; g.beginPath(); g.moveTo(0, v.py(platformY)); g.lineTo(w, v.py(platformY)); g.stroke();
+  g.fillStyle = muted; g.font = "11px system-ui"; g.fillText("platform", 6, v.py(platformY) - 4); g.fillText("attachment", v.px(0) + 6, v.py(by) - 4);
+  const src = t.feed && t.feed.markers ? [t.feed.x, t.feed.y, t.feed.z] : t.predicted;
+  if (!src) { $("#tipBend").textContent = "—"; return; }
+  const hh = Math.hypot(src[0] - bx, src[2] - bz), vv = by - src[1];
+  const theta = 2 * Math.atan2(hh, vv), phi = Math.atan2(src[2] - bz, src[0] - bx) * 180 / Math.PI;
+  const rod = t.obstacle && t.obstacle.rod;
+  if (rod) {  // the rod seen along the bending plane: faint where it is off the plane, solid where it crosses it
+    const ph = phi * Math.PI / 180, ux = Math.cos(ph), uz = Math.sin(ph), dc = cssVar("--danger");
+    const pts = Array.from({ length: 41 }, (_, k) => rod.p0.map((a, i) => a + (rod.p1[i] - a) * k / 40))
+      .map(([x, y, z]) => [(x - bx) * ux + (z - bz) * uz, y, -(x - bx) * uz + (z - bz) * ux]);
+    g.strokeStyle = dc + "44"; g.lineWidth = Math.max(2, 2 * rod.radius * v.k); g.lineCap = "round"; g.beginPath();
+    pts.forEach(([hp, y], i) => i ? g.lineTo(v.px(hp), v.py(y)) : g.moveTo(v.px(hp), v.py(y))); g.stroke();
+    for (let k = 1; k < pts.length; k++) {
+      const [h0, y0, w0] = pts[k - 1], [h1, y1, w1] = pts[k];
+      if (w0 * w1 <= 0 && w0 !== w1) {
+        const f = w0 / (w0 - w1);
+        dot(g, v.px(h0 + f * (h1 - h0)), v.py(y0 + f * (y1 - y0)), Math.max(3, rod.radius * v.k), dc);
+      }
+    }
+    g.lineCap = "butt"; g.lineWidth = 1;
+  }
+  g.strokeStyle = cssVar("--accent"); g.lineWidth = 4; g.lineCap = "round"; g.beginPath(); g.moveTo(v.px(0), v.py(by));
+  if (hh < 0.5) g.lineTo(v.px(0), v.py(by - vv));
+  else {
+    const R = (hh * hh + vv * vv) / (2 * hh);
+    for (let k = 1; k <= 40; k++) { const a = theta * k / 40; g.lineTo(v.px(R * (1 - Math.cos(a))), v.py(by - R * Math.sin(a))); }
+  }
+  g.stroke(); g.lineCap = "butt";
+  dot(g, v.px(0), v.py(by), 4, muted);
+  dot(g, v.px(hh), v.py(src[1]), 6, t.feed && t.feed.markers ? cssVar("--ok") : null, t.feed && t.feed.markers ? null : muted);
+  $("#tipBend").textContent = `bend ${(theta * 180 / Math.PI).toFixed(0)}° from vertical, toward ${phi.toFixed(0)}° (from +x toward +z), `
+    + `tip ${hh.toFixed(0)} mm out, ${(src[1] - (by - L)).toFixed(0)} mm above the straight-down position` + (t.feed && t.feed.markers ? "" : " (model)");
+}
+
+// live camera view: images from tip_feed.py, fetched one at a time while it is running and the tab is visible
+let camLive = false, camBusy = false, camUrl = null;
+function setCamLive(live) {
+  camLive = live;
+  $("#camBox").classList.toggle("live", live && !!camUrl);
+  if (live && !camBusy && !document.hidden) camLoop();
+}
+async function camLoop() {
+  camBusy = true;
+  const img = $("#camImg");
+  while (camLive && !document.hidden) {
+    const t0 = performance.now();
+    try {
+      const r = await fetch("/api/camera/latest", {cache: "no-store"});
+      if (r.ok) {
+        const url = URL.createObjectURL(await r.blob());
+        await new Promise(res => { img.onload = img.onerror = res; img.src = url; });
+        if (camUrl) URL.revokeObjectURL(camUrl);
+        camUrl = url;
+        if (img.naturalWidth) $("#camBox").style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+        $("#camBox").classList.toggle("live", camLive);
+      }
+    } catch (e) { /* server restarting; retry */ }
+    await new Promise(res => setTimeout(res, Math.max(0, 100 - (performance.now() - t0))));
+  }
+  camBusy = false;
+}
+document.addEventListener("visibilitychange", () => setCamLive(camLive));
+
+function renderTip(s) {
+  setCamLive(!!(s.camera && s.camera.age_s != null && s.camera.age_s < 1.5));
+  const t = s.tip; if (!t) return;
+  if (t.model && !tipModel) loadTipModel();
+  if (!t.model) tipModel = null;
+  $("#tipModelChip").textContent = tipModel ? `model: ${tipModel.n} samples, ±${tipModel.cv_error_mm.median.toFixed(0)} mm` : "no model";
+  const fc = $("#tipFeedChip"), live = t.feed && t.feed.age_s < 0.5;
+  fc.textContent = !t.feed ? "camera feed off" : !live ? "camera feed stale" : t.feed.markers ? `camera: tip seen` : "camera: tip not seen";
+  fc.classList.toggle("live", !!(live && t.feed.markers));
+  const f3 = p => p ? `${p[0].toFixed(1)}, ${p[2].toFixed(1)}` : "—";
+  $("#tipMeas").textContent = t.feed && t.feed.markers ? f3([t.feed.x, t.feed.y, t.feed.z]) : "—";
+  $("#tipPred").textContent = f3(t.predicted);
+  $("#tipY").textContent = t.feed && t.feed.markers ? t.feed.y.toFixed(1) : t.predicted ? t.predicted[1].toFixed(1) + " (model)" : "—";
+  $("#tipPose").textContent = t.pose ? `${t.pose.A.toFixed(2)} / ${t.pose.B.toFixed(2)}` : "—";
+  const st = t.status, err = st.error_mm != null ? ` · error ${st.error_mm.toFixed(1)} mm` : "";
+  $("#tipStatus").innerHTML = `<b>${st.state}</b>${err}<br>${st.message || ""}`;
+  $("#tipGo").disabled = t.busy || !tipModel || !s.connected; $("#tipStop").disabled = !t.busy;
+  renderObstacle(t.obstacle, t);
+  drawTop(t); drawSide(t);
+  if (window.scene3d) window.scene3d.update(s);
+}
+
+function tipGoto() {
+  const x = +$("#tipX").value, z = +$("#tipZ").value;
+  if ($("#tipX").value === "" || $("#tipZ").value === "") return showError("Enter a target X and Z");
+  tipTarget = [x, z];
+  api("/api/tip/goto", { x, z, closed_loop: $("#tipClosed").checked }).then(() => showError("")).catch(() => {});
+}
+function setTipTarget(x, z) { $("#tipX").value = x.toFixed(0); $("#tipZ").value = z.toFixed(0); tipTarget = [x, z]; }  // also the 3D view
+$("#tipGo").addEventListener("click", tipGoto);
+$("#tipStop").addEventListener("click", () => api("/api/tip/stop", {}).catch(() => {}));
+$("#tipTop").addEventListener("click", e => {
+  if (!tipView) return;
+  const r = e.target.getBoundingClientRect();
+  const u = tipView.wx(e.clientX - r.left), w = tipView.wy(e.clientY - r.top), x = view.x(u, w), z = view.z(u, w);
+  setTipTarget(x, z);
+  if ($("#tipClick").checked && !(state && state.tip && state.tip.busy)) tipGoto();
+});
+setInterval(() => { if (state && state.tip && state.tip.model) loadTipModel(); }, 15000);  // pick up refits
+
+// ---------------- Obstacle ----------------
+const ROD_COLOURS = { red: "#d6322a", orange: "#f08a24", yellow: "#e2b714", pink: "#e86fb0", purple: "#8e44ad",
+  green: "#3f8a3a" };
+const rodColour = name => ROD_COLOURS[name] || cssVar("--warn");  // "picked": a colour picked in the GUI
+let obsMap = null, obsVersion = null, camMode = null;  // camMode: null, "pick" or { mark: [[u, v], ...] }
+async function loadObsMap(version) {
+  obsVersion = version;
+  try { const r = await fetch("/api/obstacle/map"); obsMap = r.ok ? await r.json() : null; } catch { obsMap = null; }
+}
+function setCamMode(m) {
+  camMode = m;
+  $("#camBox").classList.toggle("picking", !!m);
+  $("#obsPick").classList.toggle("primary", m === "pick");
+  $("#obsMark").classList.toggle("primary", !!(m && m.mark));
+}
+function renderObstacle(o, t) {
+  if (!o) return;
+  if (o.version !== obsVersion) loadObsMap(o.version);
+  $("#obsLegend").hidden = !o.rod;
+  const r = o.rod, rods = o.rods || [], objs = o.objects || [], age = o.rods_age_s;
+  $("#obsBarsLegend").hidden = !rods.length && !objs.length;
+  $("#obsChip").textContent = r ? `rod marked · r ${r.radius.toFixed(0)} mm`
+    : rods.length || objs.length ? [rods.length && `${rods.length} rod${rods.length > 1 ? "s" : ""}`,
+        objs.length && `${objs.length} object${objs.length > 1 ? "s" : ""}`].filter(Boolean).join(", ")
+      + (o.feed ? " found" : " found before the camera feed stopped")
+    : o.feed ? (o.hsv_set ? "looking for the picked colour" : "looking for orange / red rods") : "no rods (camera feed off)";
+  $("#obsChip").classList.toggle("live", !!(r || ((rods.length || objs.length) && o.feed)));
+  const counts = {};
+  rods.forEach(b => { counts[b.colour] = (counts[b.colour] || 0) + 1; });
+  $("#obsBars").innerHTML = rods.length ? "Found by colour (shown, not avoided): " + Object.entries(counts).map(([c, n]) =>
+    `<b style="color:${rodColour(c)}">${n} ${c === "picked" ? "of the picked colour" : c}</b>`).join(", ")
+    + (o.feed && age != null && age > 2 ? ` · last seen ${age < 120 ? age.toFixed(0) + " s" : (age / 60).toFixed(0) + " min"} ago` : "") : "";
+  if (objs.length) $("#obsBars").innerHTML += (rods.length ? "<br>" : "") + "Objects (shown, not avoided): " + objs.map(ob =>
+    `<b style="color:${rodColour(ob.colour)}">${ob.colour} ${ob.shape}</b> ${ob.size_mm[0].toFixed(0)}×${ob.size_mm[1].toFixed(0)} mm`
+    + (ob.holes > 0.25 ? " (open / mesh)" : "")
+    + (ob.pockets && ob.pockets.length ? ` with pockets: ${ob.pockets.map(pk => `${pk.shape} ${pk.size_mm[0].toFixed(0)} mm`
+      + (pk.depth_mm != null ? ` (${pk.depth_mm.toFixed(0)} mm deep)` : "")).join(", ")}` : "")).join("; ");
+  if (document.activeElement !== $("#obsClearance")) $("#obsClearance").value = o.clearance_mm;
+  $("#obsAvoid").checked = o.avoid;
+  const clr = (el, v) => {
+    el.textContent = v == null ? "—" : `${v.toFixed(0)} mm`;
+    el.style.color = v == null ? "" : v < 0 ? "var(--danger)" : v < o.clearance_mm ? "var(--warn)" : "var(--ok)";
+  };
+  clr($("#obsClrModel"), o.clear_model_mm); clr($("#obsClrCam"), o.clear_camera_mm);
+  $("#obsPick").disabled = $("#obsMark").disabled = !o.feed;
+  $("#obsForget").disabled = !r && !rods.length && !objs.length && !o.hsv_set;
+  if (camMode && !o.feed) setCamMode(null);
+  $("#obsStatus").textContent = camMode === "pick" ? "Click the rod in the camera view to use its colour."
+    : camMode ? `Click the rod's ${camMode.mark.length ? "other" : "first"} end in the camera view.`
+    : o.picking ? "Picking the colour…" : o.marking ? "Measuring the marked ends…" : o.error || "";
+  $("#obsStatus").style.color = o.error && !camMode ? "var(--danger)" : "";
+}
+$("#obsAvoid").addEventListener("change", e => api("/api/obstacle/settings", { avoid: e.target.checked }).catch(() => {}));
+$("#obsClearance").addEventListener("change", e => api("/api/obstacle/settings", { clearance_mm: +e.target.value }).catch(() => {}));
+$("#obsPick").addEventListener("click", () => setCamMode(camMode === "pick" ? null : "pick"));
+$("#obsMark").addEventListener("click", () => setCamMode(camMode && camMode.mark ? null : { mark: [] }));
+$("#obsForget").addEventListener("click", () => api("/api/obstacle/clear", {}).catch(() => {}));
+$("#camBox").addEventListener("click", e => {
+  if (!camMode) return;
+  const r = $("#camImg").getBoundingClientRect();
+  const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+  if (u < 0 || u > 1 || v < 0 || v > 1) return;
+  if (camMode === "pick") { api("/api/obstacle/pick", { u, v }).catch(() => {}); setCamMode(null); return; }
+  camMode.mark.push([u, v]);
+  if (camMode.mark.length === 2) { api("/api/obstacle/mark", { points: camMode.mark, radius_mm: 5 }).catch(() => {}); setCamMode(null); }
+});
+
+// ---------------- Gamepad ----------------
+const JOY_DEADZONE = 0.12;
+let joyPending = false, joyPrevB = false, joyLast = { x: 0, y: 0, enable: false };
+
+function readStick() {
+  const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  const gp = pads[0];
+  if (!gp) return null;
+  let x = gp.axes[0] || 0, y = -(gp.axes[1] || 0);            // stick up = +y
+  const m = Math.hypot(x, y);
+  if (m < JOY_DEADZONE) { x = 0; y = 0; }
+  else { const k = Math.min(1, (m - JOY_DEADZONE) / (1 - JOY_DEADZONE)) / m; x *= k; y *= k; }
+  if ($("#joyInvX").checked) x = -x;
+  if ($("#joyInvY").checked) y = -y;
+  const b = gp.buttons, pressed = i => !!(b[i] && b[i].pressed);
+  // standard layout (USB, or Bluetooth in Chrome): RT = 7, RB = 5; a light squeeze on RT is enough.
+  // Other layouts (e.g. some browsers over Bluetooth): triggers may be axes with unknown rest values, so only
+  // the bumper button is trusted: RB is button 7 (Linux) or 5.
+  const standard = gp.mapping === "standard";
+  const enable = standard ? !!((b[7] && b[7].value > 0.15) || pressed(5)) : pressed(5) || pressed(7);
+  const bPressed = !!(b[1] && b[1].pressed);
+  if (bPressed && !joyPrevB) api("/api/torque_off_all", {}).catch(() => {});
+  joyPrevB = bPressed;
+  return { id: gp.id, x, y, enable, standard };
+}
+
+// On-screen stick: dragging is the dead-man switch; letting go recentres it and the arm holds.
+const vStick = { active: false, x: 0, y: 0 };
+(() => {
+  const cv = $("#joyStick");
+  let r = null;  // stick position measured once per drag, so a page reflow can't jerk the deflection
+  const update = e => {
+    const rad = r.width / 2 - 4;
+    let x = (e.clientX - r.left - r.width / 2) / rad, y = -(e.clientY - r.top - r.height / 2) / rad;
+    const m = Math.hypot(x, y);
+    if (m > 1) { x /= m; y /= m; }
+    vStick.x = x; vStick.y = y;
+  };
+  const release = () => { vStick.active = false; vStick.x = 0; vStick.y = 0; cv.classList.remove("dragging"); };
+  cv.addEventListener("pointerdown", e => {
+    r = cv.getBoundingClientRect(); cv.setPointerCapture(e.pointerId); vStick.active = true; cv.classList.add("dragging"); update(e);
+  });
+  cv.addEventListener("pointermove", e => { if (vStick.active) update(e); });
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => cv.addEventListener(t, release));
+  window.addEventListener("blur", release);
+})();
+
+function drawStick(x, y, enable) {
+  const { g, w, h } = setupCanvas($("#joyStick")), r = w / 2 - 4;
+  g.strokeStyle = cssVar("--line"); g.lineWidth = 2; g.beginPath(); g.arc(w / 2, h / 2, r, 0, 2 * Math.PI); g.stroke();
+  g.beginPath(); g.moveTo(w / 2 - r, h / 2); g.lineTo(w / 2 + r, h / 2); g.moveTo(w / 2, h / 2 - r); g.lineTo(w / 2, h / 2 + r); g.stroke();
+  g.fillStyle = cssVar("--muted"); g.font = "600 11px system-ui"; g.textAlign = "center";
+  LAYOUT_DEG.forEach((a, i) => g.fillText(i, w / 2 + 0.8 * r * Math.cos(a * Math.PI / 180), h / 2 - 0.8 * r * Math.sin(a * Math.PI / 180) + 4));
+  g.textAlign = "left";
+  dot(g, w / 2 + x * r, h / 2 - y * r, 16, enable ? cssVar("--ok") : cssVar("--muted"));
+}
+
+function joyTick() {
+  const pad = readStick(), j = state && state.tip && state.tip.joy;
+  const active = !!(j && j.active);
+  // the on-screen stick takes over while it is being dragged; otherwise the gamepad (if any)
+  const st = vStick.active ? { x: vStick.x, y: vStick.y, enable: true } : pad || { x: 0, y: 0, enable: false };
+  $("#joyPad").textContent = pad ? `gamepad: ${pad.id.replace(/\s*\(.*$/, "").slice(0, 32)}${pad.standard ? "" : " (hold RB to move)"} + on-screen stick` : "on-screen stick (no gamepad)";
+  const en = $("#joyEnable"); en.textContent = st.enable ? (vStick.active ? "dragging: moving" : "trigger held: moving") : "released";
+  en.classList.toggle("on", !!(st && st.enable && active));
+  drawStick(st ? st.x : 0, st ? st.y : 0, !!(st && st.enable));
+  $("#joyStart").disabled = active || !(state && state.connected) || (state.tip && state.tip.busy);
+  $("#joyStop").disabled = !active;
+  $("#joyMode").disabled = active;
+  $("#joyControl").disabled = active;
+  $("#joyStatus").textContent = j ? (active ? j.message : j.message ? `off (${j.message})` : "off") : "";
+  $("#joyStatus").style.color = active && j.walls && j.walls.length ? "var(--warn)" : "";
+  if (active && st && !joyPending) {
+    joyPending = true;
+    const mode = $("#joyMode").value;  // stick is in screen directions: convert to camera x, z or to the motor pairs
+    const [sx, sy] = mode === "tip" ? [view.x(st.x, st.y), view.z(st.x, st.y)] : stickToPairs(st.x, st.y);
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 300);  // never let one slow request freeze the stick
+    fetch("/api/tip/joy", { method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+      body: JSON.stringify({ mode, control: $("#joyControl").value, x: sx, y: sy, enable: st.enable }) })
+      .then(r => { if (!r.ok) return r.json().then(d => showError(d.detail || r.statusText)); })
+      .catch(() => {}).finally(() => { clearTimeout(timer); joyPending = false; });
+  }
+}
+$("#joyStart").addEventListener("click", () => {
+  if ($("#joyMode").value === "tip" && !tipModel) return showError("The top-view mapping needs a tip model; choose the motor-pair mapping");
+  api("/api/tip/joy/start", {}).then(() => showError("")).catch(() => {});
+});
+$("#joyStop").addEventListener("click", () => api("/api/tip/stop", {}).catch(() => {}));
+setInterval(joyTick, 50);
+
+loadPorts();
+connectWs();
+</script>
+<script type="importmap">{ "imports": { "three": "/static/vendor/three.module.min.js" } }</script>
+<script type="module" src="/static/scene3d.js?v={{UI_VERSION}}"></script>
+</body>
+</html>

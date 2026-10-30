@@ -1,0 +1,23 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "motor_gui/app/static/index.html"
+        ],
+        "createdAt": "2026-10-30T12:53:55.668Z",
+        "reason": "assistant: #camImg is filled at runtime with blob URLs from /api/camera/latest and hidden (display:none) until the first frame loads; same as the original GUI"
+      },
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-10-30T13:06:04.421Z",
+        "reason": "assistant: Geist is the typeface dealt by the design-taste-frontend app sheet (seed 1533698191) for this redesign; the user asked for that skill"
+      }
+    ]
+  }
+}

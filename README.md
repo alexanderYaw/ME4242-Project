@@ -38,17 +38,33 @@ use port 8000: if the Docker version below is running, stop it first (`docker co
 
 ### 5. Open http://localhost:8000
 
-The header should say **Connected · /dev/ttyUSB0** (or `COM3` etc. on Windows) and all four cards should
-show a motor model. If it says no EMIO was found, check the USB cable and power, then click **Connect**.
+The top bar should say **Connected · /dev/ttyUSB0** (or `COM3` etc. on Windows) and the four motors in the map
+(drawn where they sit on the robot, seen from above) should show a state such as "Torque off". If it says no EMIO
+was found, check the USB cable and power, then press **Connect** under **Setup**.
+
+**Layout.** The rail on the left switches between three screens; the top bar (connection, control mode, speed,
+**Hold all**, **TORQUE OFF ALL**) and the alert band under it stay on every screen.
+
+- **Operate**: the workspace view (Camera / Top / Side / 3D tabs), the tip readouts (camera and model labelled),
+  Move tip, the joystick, and the motor map.
+- **Motors**: select a motor in the map for its angle, goal, slider, jog, torque, reboot, calibration, telemetry and
+  limits.
+- **Setup**: serial port, calibration of all motors, tip model, obstacles (avoid, clearance, pick colour, mark
+  ends, forget), joystick inversion, 3D view options and reference notes. **Night** (bottom of the rail) switches
+  to a dark display for low light.
+
+Faults and warnings (hardware errors, a motor not answering, commands overridden by another program, camera feed off
+or stale, the arm too close to the marked rod, a failed move) stay in the alert band until the condition clears;
+**Acknowledge** shrinks an alert but keeps it listed while it is still reported.
 To force a specific port: `EMIO_PORT=/dev/ttyUSB1 ./run.sh` (Windows: `set EMIO_PORT=COM5` before
 `run.bat`).
 
 ### 6. First use
 
-1. Turn **Torque** on for a motor; it holds its current position.
+1. Open **Motors**, select a motor and turn **Torque** on; it holds its current position.
 2. Jog with **+1° / +5°** to check it moves. From 0° only the positive direction works (0–180° limit).
 3. Optional: move each motor to its reference position and press **Calibrate: set 0 here**. This creates
-   `data/settings.json`, which also stores drum radius and limits (each card's Settings).
+   `data/settings.json`, which also stores drum radius and limits (the motor's "Drum, cable sign and soft limits").
 4. **TORQUE OFF ALL** (or `Esc`) releases everything.
 
 No settings file is needed beforehand: the app starts with defaults (speed 30 ≈ 7 rpm, 20 mm drum radius,
@@ -93,7 +109,7 @@ are kept in `motor_gui/data/`, which is mounted into the container.
 
 ## Tip control (cable-driven arm)
 
-The **Tip control** panel (below the motor cards) moves the arm tip to a target position (x, z) in the
+The **Operate** screen moves the arm tip to a target position (x, z) in the
 calibrated camera frame, shows the tip live from above and the arm's bend from the side.
 
 **EMIO Python, once per machine.** The scripts in the repo root (camera feed, calibration, data collection,
@@ -123,17 +139,17 @@ this README says `~/emio-venv/bin/python`.) Run the scripts from the repo root.
    stays below 120° of bend, where the tip would start curling back. If some cables weren't connected during
    collection, `--mirror 1,2` estimates those motors from their opposite ones. `motor_gui/data/` is not in git, so
    a fresh clone has no tip model: tip control (Move tip, tip-mode joystick, obstacle planning) needs this fit
-   first; the motor cards and motor-pair joystick work without it.
+   first; the Motors screen and the motor-pair joystick work without it.
 
 **Use:**
 
 1. Start the GUI, and in a second terminal the camera feed: `~/emio-venv/bin/python tip_feed.py`
-   (`--show` for the camera windows). The panel shows "camera: tip seen" when it's live.
+   (`--show` for the camera windows). The Tip panel shows "camera: tip seen" when it's live.
 2. Click the top view (or type X/Z and press **Move tip**). With **Correct with camera** on, it moves using
    the model, then corrects from the camera until the tip is within 3 mm (friction makes the model alone
    about ±9 mm). Targets outside the reachable area go to the nearest reachable point.
 
-**Joystick:** press **Start joystick control** in the panel, then either drag the **on-screen stick** with
+**Joystick:** press **Start joystick** on Operate, then either drag the **on-screen stick** with
 the mouse or a finger (let go to hold; it recentres), or use a USB **gamepad** (Xbox / PlayStation style; press
 any button on it first so the browser sees it): the left stick steers, hold **RT / R2** (or RB / R1) to move and
 let go to hold, **B / Circle** = torque off all. **Bluetooth** works too: unplug the cable, put the controller in
@@ -171,7 +187,7 @@ the camera feed posts to `POST /api/tip`.
 ### Obstacle avoidance (rod)
 
 `tip_feed.py` also looks for obstacle rods: by default all **orange** and **red** ones (`--rod-color` with one or
-more of `red orange yellow pink purple`, or **Pick rod colour** in the panel and click a rod in the camera view to look
+more of `red orange yellow pink purple`, or **Pick rod colour** in Setup → Obstacles and click a rod in the camera view (it opens by itself) to look
 for that colour only; `--no-rod` turns it off). Per colour it drops blobs too thick to be a rod (e.g. a red box), then
 fits the coloured pixels with 3D lines from the depth camera one after the other (`rod_detect.py`): ends, radius, and an
 end that runs out of the image is taken to continue 150 mm (into the pillar). The rods are static, so detections are
@@ -200,7 +216,7 @@ API: `POST /api/obstacle/settings {"avoid":true,"clearance_mm":20}`, `POST /api/
 
 ### 3D view
 
-Below the tip panel, an interactive 3D model of the workspace (three.js, bundled in `motor_gui/app/static/vendor`, so
+The **3D** tab of Operate's view: an interactive 3D model of the workspace (three.js, bundled in `motor_gui/app/static/vendor`, so
 it works offline). Drag to orbit, right-drag to pan, scroll to zoom; **Front** / **Top** / **Camera's view** presets
 (Top matches the 2D top view's motor layout; Camera's view looks from the depth camera, to compare with the live image).
 It shows:

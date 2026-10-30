@@ -1,325 +1,657 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EMIO Motor Control</title>
+<title>EMIO · Corset effector</title>
+<link rel="stylesheet" href="/static/vendor/fonts/fonts.css">
 <style>
-  :root {
-    --bg: #f5f6f8; --card: #ffffff; --text: #1b1f24; --muted: #6b7380; --line: #dde1e6;
-    --accent: #2563eb; --ok: #15803d; --warn: #b45309; --danger: #dc2626; --chip: #eef1f5;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0f1216; --card: #171b21; --text: #e6e9ee; --muted: #8c95a3; --line: #2a3039;
-      --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --danger: #f87171; --chip: #222831;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { position: sticky; top: 0; z-index: 2; background: var(--card); border-bottom: 1px solid var(--line);
-           padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
-  h1 { font-size: 16px; margin: 0 8px 0 0; white-space: nowrap; }
-  .status { display: flex; align-items: center; gap: 6px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
-  .dot.on { background: var(--ok); }
-  .grow { flex: 1; }
-  select, input[type=number] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-           border-radius: 6px; padding: 5px 7px; }
-  input[type=number] { width: 80px; font-family: var(--mono); }
-  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--text);
-           border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-  button:hover:not(:disabled) { border-color: var(--accent); }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
-  .speed { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-  .error { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger);
-           padding: 8px 16px; display: none; }
-  main { padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-  .card.offline { opacity: .5; }
-  .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 10px; }
-  .card-head h2, .chip { white-space: nowrap; }
-  .card-head h2 { font-size: 15px; margin: 0; }
-  .chip { font-size: 11px; padding: 2px 7px; border-radius: 99px; background: var(--chip); color: var(--muted); }
-  .chip.moving { color: var(--accent); }
-  .chip.uncal { color: var(--warn); }
-  .chip.err { color: #fff; background: var(--danger); }
-  .switch { margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
-  .switch input { width: 36px; height: 20px; accent-color: var(--ok); cursor: pointer; }
-  .big { font-family: var(--mono); font-size: 30px; font-weight: 600; letter-spacing: -.5px; }
-  .big small { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
-  .readouts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin: 8px 0 12px; }
-  .readouts div { display: flex; flex-direction: column; }
-  .readouts span:first-child { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
-  .readouts span:last-child { font-family: var(--mono); font-size: 14px; }
-  input[type=range] { width: 100%; accent-color: var(--accent); }
-  .clampnote { color: var(--warn); font-family: inherit; }
-  .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: var(--mono); }
-  .row button { padding: 6px 8px; }
-  .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
-  details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
-  summary { cursor: pointer; color: var(--muted); }
-  .settings { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; margin-top: 8px; }
-  .hint { color: var(--muted); font-size: 12px; padding: 0 16px 16px; }
-  kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
-  .tip-panel { margin: 0 16px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-  .tip-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
-  .tip-head h2 { font-size: 15px; margin: 0 6px 0 0; }
-  .chip.live { color: var(--ok); }
-  .tip-grid { display: grid; gap: 14px; grid-template-columns: minmax(280px, 1.35fr) minmax(240px, 1fr) minmax(230px, .8fr); }
-  @media (max-width: 1000px) { .tip-grid { grid-template-columns: 1fr; } }
-  .view { display: flex; flex-direction: column; gap: 4px; }
-  .view-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
-  .view canvas { width: 100%; height: 340px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
-  #tipTop { cursor: crosshair; }
-  .tip-side { display: flex; flex-direction: column; gap: 10px; }
-  .cam-view { margin-top: 14px; }
-  .cam-box { position: relative; width: 100%; max-width: 720px; aspect-ratio: 4 / 3; background: var(--bg);
-             border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: grid; place-items: center; }
-  .cam-box img { width: 100%; height: 100%; object-fit: contain; display: none; }
-  .cam-box.live img { display: block; }
-  .cam-box.live .cam-note { display: none; }
-  .cam-note { color: var(--muted); padding: 16px; text-align: center; }
-  .tip-side .readouts { grid-template-columns: repeat(2, 1fr); margin: 0; }
-  .tip-status { font-size: 13px; min-height: 2.8em; }
-  .tip-status b { text-transform: capitalize; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
-  .joy-box { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
-  .joy-box h3 { font-size: 13px; margin: 0; }
-  .joy-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  #joyStick { width: 150px; height: 150px; flex: none; touch-action: none; cursor: grab; user-select: none; }
-  #joyStick.dragging { cursor: grabbing; }
-  .chip.on { color: #fff; background: var(--ok); }
-  .cam-box.picking { cursor: crosshair; outline: 2px solid var(--warn); }
-  .obs-box input[type=number] { width: 64px; }
-  .scene-view { margin-top: 14px; }
-  .scene-box { position: relative; width: 100%; height: 560px; border: 1px solid var(--line); border-radius: 8px;
-               overflow: hidden; background: var(--bg); }
-  .scene-box canvas { width: 100%; height: 100%; display: block; touch-action: none; }
-  .scene-hover { position: absolute; left: 8px; bottom: 6px; font: 12px var(--mono); color: var(--muted); pointer-events: none; }
-  .scene-tools { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: 13px; }
-  .scene-tools input[type=number] { width: 64px; }
-  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+/* Style: achromatic ledger (tasteskill app sheet, seed 1533698191). Ink chrome, one data hue on the arm and tip,
+   status colours only as signals. Ground: a meter's blue-grey. Grid: rail 64 + canvas; Operate is
+   [view 1fr | side 380px] with one 12px gap; Motors [map 440px | detail 1fr]; Setup [label 300px | panel 1fr]. */
+:root {
+  --ground: #f2f4f7; --surface: #ffffff; --raised: #eceff3; --active: #e4e7ec;
+  --border: #e1e4e9; --rule: #edf0f3; --control: #c9ced6;
+  --text: #0a0a0a; --muted: #585e66; --faint: #6b7078;
+  --primary: #141414; --on-primary: #ffffff;
+  --data: #1d5fbf;                       /* the one chart hue: the arm and its tip */
+  --positive: #2e7d32; --negative: #c4242a; --warning: #92400e;
+  --pill-positive-bg: #dcfae5; --pill-positive-ink: #04250e;
+  --pill-negative-bg: #ffedea; --pill-negative-ink: #831c1e;
+  --pill-warning-bg: #fff6dd; --pill-warning-ink: #7a3a0a;
+  --pill-neutral-bg: #e9ecf0; --pill-neutral-ink: #343a40;
+  --stop: #b3261e; --on-stop: #ffffff;   /* TORQUE OFF ALL only */
+  --radius-card: 8px; --radius-control: 6px; --gap: 12px; --pad: 24px; --card-pad: 20px;
+  --control-height: 44px; --row-height: 44px;
+  --font: "Geist", Inter, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+  /* names read by the canvas views and scene3d.js */
+  --bg: var(--surface); --line: var(--border); --accent: var(--data); --ok: var(--positive); --warn: #b45309; --danger: var(--negative);
+}
+:root[data-theme="dark"] {
+  --ground: #000000; --surface: #111111; --raised: #1c1c1c; --active: #262626;
+  --border: #2e2e2e; --rule: #1f1f1f; --control: #4a4a4a;
+  --text: #ffffff; --muted: #b4b4b4; --faint: #949494;
+  --primary: #ffffff; --on-primary: #0a0a0a;
+  --data: #5b9cff; --positive: #3fc07a; --negative: #f06b7c; --warning: #f0b04c;
+  --pill-positive-bg: #12291a; --pill-positive-ink: #5fd796;
+  --pill-negative-bg: #2e1418; --pill-negative-ink: #ff9aa6;
+  --pill-warning-bg: #2b2210; --pill-warning-ink: #f5c26b;
+  --pill-neutral-bg: #222222; --pill-neutral-ink: #d6d6d6;
+  --stop: #e5484d; --on-stop: #0a0a0a; --warn: #f0b04c;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--ground); color: var(--text); font: 14px/20px var(--font); -webkit-font-smoothing: antialiased; }
+.num { font-variant-numeric: tabular-nums; }
+h1, h2, h3, p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--data); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- controls ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: var(--control-height); min-width: 44px;
+  padding: 0 16px; border: 1px solid var(--control); border-radius: var(--radius-control); background: var(--surface); color: var(--text);
+  font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, transform .06s; }
+.btn:hover:not(:disabled) { background: var(--raised); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn.primary:hover:not(:disabled) { background: var(--primary); opacity: .88; }
+.btn.quiet { border-color: transparent; background: var(--raised); }
+.btn.stop { background: var(--stop); border-color: var(--stop); color: var(--on-stop); font-weight: 700; }
+.btn.stop:hover:not(:disabled) { background: var(--stop); opacity: .9; }
+.btn.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+input[type=number], input[type=text], select { height: var(--control-height); border: 1px solid var(--control); border-radius: var(--radius-control);
+  background: var(--surface); padding: 0 10px; min-width: 0; }
+input[type=number] { font-variant-numeric: tabular-nums; }
+input[type=range] { accent-color: var(--text); height: var(--control-height); margin: 0; }
+.check { display: flex; align-items: center; gap: 10px; min-height: var(--control-height); cursor: pointer; }
+.check input { width: 18px; height: 18px; margin: 0; accent-color: var(--text); flex: none; }
+.field { display: grid; gap: 6px; } .field > span { font-size: 12px; color: var(--muted); font-weight: 500; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 4px; font-size: 12px; font-weight: 500;
+  background: var(--pill-neutral-bg); color: var(--pill-neutral-ink); white-space: nowrap; }
+.pill.pos { background: var(--pill-positive-bg); color: var(--pill-positive-ink); }
+.pill.neg { background: var(--pill-negative-bg); color: var(--pill-negative-ink); }
+.pill.warn { background: var(--pill-warning-bg); color: var(--pill-warning-ink); }
+.pill.data { background: var(--data); color: #fff; }
+.muted { color: var(--muted); } .small { font-size: 12px; line-height: 16px; }
+.unit { color: var(--muted); font-size: .58em; font-weight: 400; margin-left: 3px; }
+code { font-family: var(--mono); font-size: 12px; }
+details > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; list-style: none; }
+details > summary::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; margin: 0 4px 0 2px; }
+details[open] > summary::before { transform: rotate(45deg); }
+
+/* ---- shell: icon rail + top bar ---- */
+.app { display: grid; grid-template-columns: 80px minmax(0, 1fr); min-height: 100%; }
+.rail { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 10px 8px;
+  border-right: 1px solid var(--border); background: var(--ground); z-index: 3; }
+.mark { display: grid; place-items: center; height: 48px; margin-bottom: 10px; color: var(--text); }
+.rail button { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 58px; padding: 8px 0 6px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; position: relative; }
+.rail button:hover { color: var(--text); background: var(--raised); }
+.rail button[aria-current="page"] { color: var(--text); background: var(--active); }
+.rail svg { width: 20px; height: 20px; }
+.rail .count { position: absolute; top: 4px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--negative);
+  color: #fff; font-size: 11px; line-height: 18px; font-weight: 700; }
+.rail .grow { flex: 1; }
+.main { min-width: 0; display: flex; flex-direction: column; }
+.topbar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 20px; min-height: 64px; padding: 10px var(--pad);
+  background: var(--ground); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.ident { display: grid; gap: 1px; min-width: 0; }
+.ident b { font-size: 16px; font-weight: 700; }
+.conn { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.conn.on i { background: var(--positive); } .conn.bad i { background: var(--negative); }
+.mode { display: grid; gap: 1px; min-width: 0; flex: 1 1 220px; }
+.vr { align-self: stretch; width: 1px; background: var(--border); flex: none; }
+.mode span { font-size: 12px; color: var(--muted); }
+.mode b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.speed { display: flex; align-items: center; gap: 10px; }
+.speed label { font-size: 12px; color: var(--muted); font-weight: 500; }
+.speed input { width: 120px; }
+.speed output { min-width: 66px; font-weight: 500; }
+.stops { display: flex; gap: 8px; }
+.stops .btn.stop { flex-direction: column; gap: 0; line-height: 16px; padding: 4px 16px; }
+.stops .btn.stop small { font-size: 11px; font-weight: 500; opacity: .9; }
+
+/* ---- alert band ---- */
+.alerts { display: grid; gap: 1px; background: var(--border); border-bottom: 1px solid var(--border); }
+.alerts:empty { display: none; }
+.al { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 6px var(--pad); min-height: 52px;
+  background: var(--surface); }
+.al.fault { background: var(--pill-negative-bg); color: var(--pill-negative-ink); }
+.al.warning { background: var(--pill-warning-bg); color: var(--pill-warning-ink); }
+.al .lv { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; min-width: 92px; }
+.al .lv svg { width: 16px; height: 16px; flex: none; }
+.al .what { min-width: 0; }
+.al .what b { font-weight: 700; } .al .what .asrc { font-weight: 500; }
+.al .what .ms { margin-left: 10px; font-size: 13px; opacity: .85; }
+.al .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.al .acts .btn { background: transparent; border-color: currentColor; color: inherit; min-height: 40px; }
+.al .acts .btn { min-height: 44px; }
+.al .more { grid-column: 2 / -1; display: grid; gap: 6px; padding: 2px 0 8px; font-size: 13px; }
+.al .more dl { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; } .al .more dt { opacity: .8; } .al .more dd { margin: 0 0 0 6px; font-weight: 500; }
+.al .more dl > div { display: flex; }
+.al.acked { min-height: 44px; background: var(--surface); color: var(--text); border-left: 4px solid var(--lvc, var(--muted)); padding-left: calc(var(--pad) - 4px); }
+.al.acked .lv { color: var(--lvc); }
+.al.fault { --lvc: var(--negative); } .al.warning { --lvc: var(--warn); } .al.caution, .al.notice { --lvc: var(--muted); }
+.al-more { min-height: 44px; border: 0; background: var(--surface); color: var(--muted); font-weight: 500; cursor: pointer; }
+
+/* ---- canvas, title row, panels ---- */
+.canvas { padding: 16px var(--pad) 32px; display: grid; gap: var(--gap); }
+.titlerow { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; padding-bottom: 4px; }
+.titlerow h1 { font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: -.01em; }
+.finding { font-size: 15px; color: var(--text); flex: 1 1 360px; min-width: 0; }
+.finding.bad { color: var(--negative); font-weight: 500; } .finding.warn { color: var(--warning); font-weight: 500; }
+.fresh { font-size: 13px; color: var(--muted); }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-card); min-width: 0; }
+.ph { display: flex; align-items: center; gap: 10px; padding: 14px var(--card-pad) 0; min-height: 48px; }
+.ph h2 { font-size: 16px; font-weight: 500; }
+.ph .sp { flex: 1; }
+.pb { padding: 12px var(--card-pad) var(--card-pad); }
+.hint { font-size: 13px; color: var(--muted); line-height: 19px; }
+
+/* ---- Operate ---- */
+.op-grid { display: grid; grid-template-columns: minmax(0, 1fr) 384px; gap: var(--gap); align-items: stretch; }
+.op-main { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--gap); min-width: 0; }
+.side { align-content: start; }
+.view-panel { display: flex; flex-direction: column; }
+.side { display: grid; gap: var(--gap); }
+.tabs { position: relative; display: flex; align-items: stretch; padding: 0 8px; gap: 2px; flex-wrap: wrap; }
+.tabs::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--border); }
+.tabs [role=tab] { position: relative; z-index: 1; }
+.tabs [role=tab] { min-height: 48px; padding: 2px 14px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-weight: 500; cursor: pointer; }
+.tabs [role=tab]:hover { color: var(--text); }
+.tabs [role=tab][aria-selected=true] { color: var(--text); border-bottom-color: var(--text); }
+.tabs .sp { flex: 1; }
+.tabtools { display: flex; align-items: center; gap: 6px; padding: 2px 0; flex-wrap: wrap; }
+.tabtools .btn { min-height: 44px; padding: 0 12px; }
+.viewbody { position: relative; flex: 1 1 auto; min-height: 360px; background: var(--surface); }
+.vpane { position: absolute; inset: 0; }
+.vpane canvas { width: 100%; height: 100%; display: block; }
+#tipTop { cursor: crosshair; }
+.cam-box { position: absolute; inset: 0; display: grid; place-items: center; background: #0d0f11; overflow: hidden; }
+.cam-box img { max-width: 100%; max-height: 100%; display: none; }
+.cam-box.live img { display: block; }
+.cam-box.live .cam-note { display: none; }
+.cam-note { color: #d9dde2; padding: 24px; text-align: center; max-width: 46ch; }
+.cam-note code { color: #fff; }
+.cam-box.picking { cursor: crosshair; }
+.pickbar { position: absolute; left: 12px; right: 12px; top: 12px; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; border-radius: 6px;
+  background: var(--surface); color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,.25); } /* taste-skill-ignore: floats over the camera image */
+.pickbar span { flex: 1; font-weight: 500; }
+.scene-box { position: absolute; inset: 0; overflow: hidden; background: var(--surface); }
+.scene-box canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.scene-hover { position: absolute; left: 12px; bottom: 10px; font-size: 13px; color: var(--muted); pointer-events: none; font-variant-numeric: tabular-nums; }
+.viewfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 10px var(--card-pad) 12px; border-top: 1px solid var(--rule);
+  font-size: 13px; color: var(--muted); min-height: 44px; }
+.key { display: inline-flex; align-items: center; gap: 6px; }
+.key i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.key i.sq { border-radius: 2px; } .key i.ring { background: transparent !important; border: 2px solid var(--muted); }
+#sceneMsg:empty, #tipBend:empty { display: none; }
+
+/* tip, figures */
+.figs { display: grid; grid-template-columns: 1fr 1fr; }
+.fig { padding: 10px 0; display: grid; gap: 2px; align-content: start; }
+.fig + .fig { padding-left: 16px; border-left: 1px solid var(--rule); }
+.figs.rule { border-top: 1px solid var(--rule); }
+.fig .lab { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 500; }
+.fig .val { font-size: 24px; line-height: 30px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
+.fig .val.lead { font-size: 30px; line-height: 36px; color: var(--data); }
+.fig .sub { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.val.bad { color: var(--negative); } .val.warn { color: var(--warning); }
+.val.none, .fig .val.lead.none { font-size: 14px; line-height: 30px; color: var(--muted); font-weight: 400; }
+.fig .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src { font-size: 11px; font-weight: 700; letter-spacing: 0; padding: 0 6px; height: 18px; line-height: 18px; border-radius: 3px; border: 1px solid currentColor; }
+.src.cam { color: var(--positive); } .src.model { color: var(--muted); }
+.rodline { padding-top: 10px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--muted); }
+.fig.clr { border-top: 1px solid var(--rule); }
+.clr-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.clr-row .small-v { font-size: 20px; }
+.clr-row .val.none { font-size: 14px; }
+.fig .sub.wrap { white-space: normal; }
+.rodline b { color: var(--text); font-weight: 500; }
+
+/* move, joystick */
+.xz { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+.xz input { width: 100%; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row .btn { flex: 1 1 auto; }
+.status { display: grid; gap: 2px; padding: 10px 12px; border-radius: 6px; background: var(--raised); font-size: 13px; min-height: 44px; }
+.status b { font-weight: 700; }
+.status.bad { background: var(--pill-negative-bg); color: var(--pill-negative-ink); }
+.status.warn { background: var(--pill-warning-bg); color: var(--pill-warning-ink); }
+.status.go { border-left: 3px solid var(--data); padding-left: 9px; }
+.joy { display: grid; grid-template-columns: 148px minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.joy-sel, .joy-run { display: grid; gap: 10px; align-content: start; }
+#joyStick { width: 148px; height: 148px; touch-action: none; cursor: grab; user-select: none; }
+#joyStick.dragging { cursor: grabbing; }
+.joy .field select { width: 100%; }
+
+/* motor map: the four motors where they are on the robot, seen from above */
+.mmap { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+.mcell { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "n ang" "mid mid" "tel tel"; align-items: baseline;
+  column-gap: 10px; row-gap: 2px; min-height: 92px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+  text-align: left; cursor: pointer; }
+.mcell:hover { background: var(--raised); }
+.mcell[aria-pressed=true] { border: 2px solid var(--text); padding: 9px 11px; }
+.mcell .n { grid-area: n; font-size: 26px; line-height: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mcell .ang { grid-area: ang; text-align: right; font-size: 20px; line-height: 26px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.mcell .mid { grid-area: mid; min-width: 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.mcell .st { font-weight: 500; }
+.mcell .pos { font-size: 12px; color: var(--muted); }
+.mcell .tel { grid-area: tel; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcell.fault { background: var(--pill-negative-bg); border-color: var(--negative); color: var(--pill-negative-ink); }
+.mcell.fault .pos, .mcell.fault .tel { color: inherit; opacity: .85; }
+.mcell.off { color: var(--muted); }
+.mcell .flags { display: flex; gap: 4px; flex-wrap: wrap; flex-basis: 100%; }
+.mcell .flags:empty { display: none; }
+.mmap .hub { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--data); pointer-events: none; z-index: 1; }
+.mmap.big .mcell { min-height: 156px; padding: 16px 18px; grid-template-rows: auto 1fr auto; }
+.mmap.big .mcell[aria-pressed=true] { padding: 15px 17px; }
+.mmap.big .mcell .n { font-size: 40px; line-height: 44px; }
+.mmap.big .mcell .ang { font-size: 28px; line-height: 34px; }
+.mmap.big .mcell .mid { align-self: end; } .mmap.big .mcell .st { font-size: 16px; }
+.mmap.big .mcell .tel { font-size: 13px; }
+
+/* ---- Motors ---- */
+.mot-grid { display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: var(--gap); align-items: start; }
+.md-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px var(--card-pad); border-bottom: 1px solid var(--rule); }
+.md-head h2 { font-size: 18px; font-weight: 700; }
+.md-head .sp { flex: 1; }
+.switch { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; font-weight: 500; }
+.switch input { appearance: none; width: 44px; height: 26px; border-radius: 13px; background: var(--control); position: relative; margin: 0; cursor: pointer; transition: background .15s; }
+.switch input::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.switch input:checked { background: var(--text); } .switch input:checked::after { transform: translateX(18px); background: var(--surface); }
+.switch input:disabled { opacity: .45; cursor: not-allowed; }
+.md-body { padding: 16px var(--card-pad) var(--card-pad); display: grid; gap: 18px; }
+.md-alerts:empty { display: none; }
+.md-alerts { display: grid; gap: 8px; }
+.md-alert { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 6px; font-size: 13px; }
+.md-alert.fault { background: var(--pill-negative-bg); color: var(--pill-negative-ink); }
+.md-alert.warning { background: var(--pill-warning-bg); color: var(--pill-warning-ink); }
+.md-alert.caution, .md-alert.notice { background: var(--raised); }
+.md-alert .btn { background: transparent; border-color: currentColor; color: inherit; }
+.md-pos { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 28px; align-items: end; }
+.md-pos .val { font-size: 30px; line-height: 36px; }
+.md-pos .fig { padding-top: 0; padding-bottom: 0; }
+.slider-wrap { display: grid; gap: 2px; }
+.slider-wrap input { width: 100%; }
+.range-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.clampnote { color: var(--warning); font-weight: 500; }
+.jog { display: grid; grid-template-columns: repeat(4, 1fr) 96px auto; gap: 8px; }
+.jog input { width: 100%; }
+.tele { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tele th { text-align: left; font-weight: 400; color: var(--muted); padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.tele td { text-align: right; padding: 10px 0; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+.tele-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; }
+.settings-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: end; }
+
+/* ---- Setup ---- */
+.set { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; padding: 24px 0; border-top: 1px solid var(--border); }
+.set:first-of-type { border-top: 0; padding-top: 8px; }
+.set > div:first-child h2 { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+.set > div:first-child p { font-size: 14px; color: var(--muted); }
+.set .panel { padding: var(--card-pad); display: grid; gap: 14px; }
+.cal-list { width: 100%; border-collapse: collapse; }
+.cal-list td, .cal-list th { padding: 6px 0; border-bottom: 1px solid var(--rule); text-align: left; font-weight: 400; }
+.cal-list th { color: var(--muted); font-size: 12px; }
+.cal-list .num { text-align: right; } .cal-list td:last-child { text-align: right; padding-left: 24px; }
+.opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; }
+.notes { display: grid; gap: 10px; font-size: 14px; color: var(--muted); max-width: 80ch; }
+.notes b { color: var(--text); font-weight: 500; }
+
+/* ---- dialog ---- */
+dialog { border: 1px solid var(--border); border-radius: 10px; padding: 24px; max-width: 460px; background: var(--surface); color: var(--text);
+  box-shadow: 0 20px 60px rgba(0,0,0,.3); } /* taste-skill-ignore: a modal dialog floats */
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog h2 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+dialog p { color: var(--text); margin-bottom: 20px; }
+dialog .row { justify-content: flex-end; }
+dialog .row .btn { flex: 0 0 auto; }
+
+/* ---- stale data ---- */
+body.stale .live { opacity: .4; }
+
+/* ---- narrower ---- */
+@media (max-width: 1180px) {
+  .op-grid { grid-template-columns: minmax(0, 1fr) 340px; }
+  .speed input { width: 90px; }
+  .mot-grid { grid-template-columns: 360px minmax(0, 1fr); }
+  .set { grid-template-columns: 220px minmax(0, 1fr); }
+}
+@media (max-width: 980px) {
+  .op-grid { grid-template-columns: minmax(0, 1fr); }
+  .side { grid-template-columns: 1fr 1fr; } .side .tip-panel { grid-column: 1 / -1; }
+  .joy { grid-template-columns: 148px minmax(0, 1fr); } .joy-run { grid-column: 1 / -1; }
+  .viewbody { flex: none; height: clamp(300px, 46vh, 520px); }
+  .mot-grid { grid-template-columns: minmax(0, 1fr); }
+  .mode { flex-basis: 100%; order: 5; } .vr { display: none; }
+}
+@media (max-width: 700px) {
+  :root { --pad: 16px; --card-pad: 16px; }
+  .app { grid-template-columns: minmax(0, 1fr); padding-bottom: 72px; }
+  .rail { position: fixed; top: auto; bottom: 0; left: 0; right: 0; height: 68px; flex-direction: row; padding: 6px 8px; border-right: 0; border-top: 1px solid var(--border); }
+  .rail .mark, .rail .grow { display: none; }
+  .rail button { flex: 1; min-height: 56px; }
+  .topbar { gap: 8px 10px; padding: 8px var(--pad); }
+  .ident { flex: 1 1 auto; } .ident b { font-size: 15px; } .mode { display: none; }
+  .speed { order: 6; flex: 1 1 100%; } .speed input { flex: 1; }
+  .stops { order: 2; } .stops .btn.stop small { display: none; }
+  .side { grid-template-columns: minmax(0, 1fr); }
+  .joy { grid-template-columns: 1fr; justify-items: center; } .joy > div { width: 100%; } .joy-run { grid-column: auto; }
+  .al { grid-template-columns: minmax(0, 1fr); padding: 8px var(--pad); } .al .acts { justify-content: flex-start; } .al .more { grid-column: 1; }
+  .set { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .settings-form { grid-template-columns: 1fr 1fr; } .tele-grid { grid-template-columns: 1fr; }
+  .jog { grid-template-columns: repeat(4, 1fr); } .jog input { grid-column: 1 / 3; } .jog .go { grid-column: 3 / 5; }
+  .md-pos { grid-template-columns: 1fr 1fr; }
+  .viewbody { flex: none; height: 62vw; min-height: 260px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>EMIO Motor Control</h1>
-  <div class="status"><span class="dot" id="dot"></span><span id="status">Disconnected</span></div>
-  <select id="port" title="Serial port"><option value="">auto (first FTDI)</option></select>
-  <button id="connect" class="primary">Connect</button>
-  <button id="disconnect">Disconnect</button>
-  <div class="speed">Speed
-    <input type="range" id="speed" min="5" max="200" step="5" style="width:90px">
-    <span id="speedval" style="font-family:var(--mono);min-width:64px"></span>
-  </div>
-  <div class="grow"></div>
-  <button id="calall" title="Set every motor's current position as 0">Calibrate all</button>
-  <button id="hold" title="Set every powered motor's goal to its current position">Hold all</button>
-  <button id="off" class="danger" title="Esc">TORQUE OFF ALL</button>
-</header>
-<div class="error" id="error"></div>
-<main id="cards"></main>
-<section class="tip-panel" id="tipPanel">
-  <div class="tip-head">
-    <h2>Tip control</h2>
-    <span class="chip" id="tipModelChip">no model</span>
-    <span class="chip" id="tipFeedChip">camera feed off</span>
-  </div>
-  <div class="tip-grid">
-    <div class="view">
-      <span class="view-title">Top view (x, z) — click to set a target</span>
-      <canvas id="tipTop"></canvas>
-      <div class="legend"><span><i style="background:var(--ok)"></i>tip (camera)</span>
-        <span><i style="border:2px solid var(--muted);width:6px;height:6px"></i>tip (model, from motor angles)</span>
-        <span><i style="background:var(--danger)"></i>target</span>
-        <span><i style="border:2px solid var(--warn);width:6px;height:6px"></i>gamepad target</span><span>shaded: reachable area</span>
-        <span id="obsBarsLegend" hidden>thin coloured lines / outlines: rods and objects found by colour (not avoided)</span>
-        <span id="obsLegend" hidden><i style="background:var(--danger);border-radius:0"></i>marked rod ·
-          <i style="background:color-mix(in srgb, var(--danger) 45%, transparent);border-radius:0"></i>arm would touch it ·
-          <i style="background:color-mix(in srgb, var(--warn) 35%, transparent);border-radius:0"></i>within clearance ·
-          dashed: planned path</span></div>
+<div class="app">
+  <nav class="rail" aria-label="Screens">
+    <div class="mark" title="EMIO Corset effector">
+      <!-- the product's mark: the soft arm hanging from its plate, bending -->
+      <svg viewBox="0 0 36 36" width="36" height="36" aria-hidden="true"><rect x="3" y="3" width="30" height="30" rx="7" fill="var(--text)"/><rect x="9" y="8.5" width="18" height="3" rx="1" fill="var(--ground)"/>
+        <path d="M18 11.5c0 6 1 10 7.5 15" fill="none" stroke="var(--ground)" stroke-width="3.4" stroke-linecap="round"/><circle cx="25.5" cy="26.5" r="2.6" fill="var(--data)"/></svg>
     </div>
-    <div class="view">
-      <span class="view-title">Side view (bending plane)</span>
-      <canvas id="tipSide"></canvas>
-      <div class="legend" id="tipBend">—</div>
-    </div>
-    <div class="tip-side">
-      <div class="row" style="margin:0">
-        <label>X <input type="number" id="tipX" step="1"></label>
-        <label>Z <input type="number" id="tipZ" step="1"></label> mm
+    <button data-screen="operate" aria-current="page" title="Operate: move the tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg>Operate</button>
+    <button data-screen="motors" title="Motors: each motor's position, torque and limits"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>Motors<span class="count" id="railCount" hidden></span></button>
+    <button data-screen="setup" title="Setup: connection, calibration, obstacles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Setup</button>
+    <div class="grow"></div>
+    <button id="themeBtn" title="Switch between day and night display" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span id="themeLabel">Night</span></button>
+  </nav>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="ident">
+        <b>EMIO Corset effector</b>
+        <span class="conn" id="conn"><i></i><span id="status">Disconnected</span></span>
       </div>
-      <label><input type="checkbox" id="tipClosed" checked> Correct with camera (closed loop)</label>
-      <label><input type="checkbox" id="tipClick" checked> Move when I click the top view</label>
-      <div class="row" style="margin:0">
-        <button class="primary" id="tipGo">Move tip</button>
-        <button id="tipStop">Stop</button>
+      <span class="vr" aria-hidden="true"></span>
+      <div class="mode"><span>Control</span><b id="modeText">—</b></div>
+      <div class="speed"><label for="speed">Speed</label><input type="range" id="speed" min="5" max="200" step="5"><output id="speedval" class="num" for="speed">—</output></div>
+      <div class="stops">
+        <button class="btn" id="hold" title="Stop tip control and set every powered motor's goal to where it is now">Hold all</button>
+        <button class="btn stop" id="off" title="Switch every motor's torque off: the arm goes limp (Esc, or B / Circle on a gamepad)">TORQUE OFF ALL<small>motors go limp · Esc</small></button>
       </div>
-      <div class="tip-status" id="tipStatus">Idle</div>
-      <div class="readouts">
-        <div><span>Tip (camera)</span><span id="tipMeas">—</span></div>
-        <div><span>Tip (model)</span><span id="tipPred">—</span></div>
-        <div><span>Height y</span><span id="tipY">—</span></div>
-        <div><span>Bend dA / dB</span><span id="tipPose">—</span></div>
-      </div>
-      <div class="joy-box">
-        <div class="joy-row"><h3>Joystick</h3><span class="chip" id="joyPad">on-screen stick (no gamepad)</span>
-          <span class="chip" id="joyEnable">released</span></div>
-        <div class="joy-row">
-          <canvas id="joyStick"></canvas>
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <label>Stick moves <select id="joyMode"><option value="tip">the tip (top-view direction)</option>
-              <option value="bend">the motors (push toward a motor to pull it)</option></select></label>
-            <label>Stick control <select id="joyControl"><option value="rate">jog: deflection = speed</option>
-              <option value="position">position: deflection = where to go</option></select></label>
-            <span><label><input type="checkbox" id="joyInvX"> invert x</label>
-              <label><input type="checkbox" id="joyInvY"> invert y</label></span>
+    </header>
+    <section class="alerts" id="alerts" aria-label="Alerts"></section>
+    <div class="sr" id="srPolite" aria-live="polite"></div>
+    <div class="sr" id="srAssert" aria-live="assertive"></div>
+
+    <main class="canvas">
+      <!-- ================= Operate ================= -->
+      <section class="screen" id="scr-operate" aria-labelledby="h-operate">
+        <div class="titlerow"><h1 id="h-operate">Operate</h1><p class="finding" id="finding">—</p><span class="fresh num" id="fresh"></span></div>
+        <div class="op-grid">
+          <div class="op-main">
+          <section class="panel view-panel" aria-label="Workspace view">
+            <div class="tabs" role="tablist" aria-label="Workspace view">
+              <button role="tab" id="tab-camera" aria-controls="pane-camera" aria-selected="false" data-view="camera">Camera</button>
+              <button role="tab" id="tab-top" aria-controls="pane-top" aria-selected="true" data-view="top">Top</button>
+              <button role="tab" id="tab-side" aria-controls="pane-side" aria-selected="false" data-view="side">Side</button>
+              <button role="tab" id="tab-3d" aria-controls="pane-3d" aria-selected="false" data-view="3d">3D</button>
+              <span class="sp"></span>
+              <div class="tabtools" data-for="top"><label class="check"><input type="checkbox" id="tipClick" checked> Clicking the view moves the tip</label></div>
+              <div class="tabtools" data-for="3d" hidden>
+                <button class="btn quiet" id="sceneFront">Front</button><button class="btn quiet" id="sceneTop">Top</button>
+                <button class="btn quiet" id="sceneCam" title="From the depth camera's position, to compare with the live image" disabled>Camera's view</button>
+                <button class="btn quiet" id="scenePlay" disabled title="Animate the arm along the planned path">Play path</button>
+              </div>
+            </div>
+            <div class="viewbody">
+              <div class="vpane" id="pane-camera" role="tabpanel" aria-labelledby="tab-camera" hidden>
+                <div class="cam-box" id="camBox"><img id="camImg" alt="Live camera view">
+                  <span class="cam-note" id="camNote">Camera feed off. Start it on the robot's computer: <code>~/emio-venv/bin/python tip_feed.py</code></span>
+                  <div class="pickbar" id="pickbar" hidden><span id="pickText">Click the rod in the camera view.</span><button class="btn" id="pickCancel">Cancel</button></div>
+                </div>
+              </div>
+              <div class="vpane" id="pane-top" role="tabpanel" aria-labelledby="tab-top"><canvas id="tipTop" aria-label="Top view of the tip's reachable area; click to set a target"></canvas></div>
+              <div class="vpane" id="pane-side" role="tabpanel" aria-labelledby="tab-side" hidden><canvas id="tipSide" aria-label="Side view of the arm in its bending plane"></canvas></div>
+              <div class="vpane" id="pane-3d" role="tabpanel" aria-labelledby="tab-3d" hidden>
+                <div class="scene-box" id="sceneBox"><canvas id="sceneCanvas" aria-label="3D view: drag to orbit, right-drag to pan, scroll to zoom, double-click the tip surface to preview a move"></canvas>
+                  <span class="scene-hover" id="sceneHover"></span>
+                  <span class="cam-note" id="sceneNote" style="position:absolute;inset:0;display:none;place-items:center;color:var(--muted)">Needs a fitted tip model (<code>fit_tip_model.py</code>)</span></div>
+              </div>
+            </div>
+            <div class="viewfoot">
+              <span class="key" data-for="top camera side 3d"><i style="background:var(--positive)"></i>tip, camera</span>
+              <span class="key" data-for="top side 3d"><i style="background:var(--data)"></i>arm and tip, model</span>
+              <span class="key" data-for="top 3d"><i style="background:var(--negative)"></i>target</span>
+              <span class="key" data-for="top"><i class="ring" style="border-color:var(--warn)"></i>joystick target</span>
+              <span class="key" id="obsLegend" data-for="top 3d" hidden><i class="sq" style="background:var(--negative)"></i>marked rod · shaded: arm would touch it or come within the clearance · dashed: planned path</span>
+              <span class="key" id="obsBarsLegend" data-for="top 3d camera" hidden>thin lines and outlines: rods and objects found by colour (shown, not avoided)</span>
+              <span data-for="camera">magenta: rod colour detected · cyan ring: tracked tip marker</span>
+              <span data-for="3d">points: depth camera · drag to orbit, double-click the surface to preview a move <span id="sceneCloudInfo" hidden></span></span>
+              <span id="tipBend" data-for="side"></span>
+              <span id="sceneMsg" data-for="3d" role="status"></span>
+            </div>
+          </section>
+
+          <section class="panel joy-panel" aria-labelledby="h-joy">
+            <div class="ph"><h2 id="h-joy">Joystick</h2><span class="sp"></span><span class="pill" id="joyEnable">released</span></div>
+            <div class="pb" style="display:grid;gap:12px">
+              <div class="joy">
+                <canvas id="joyStick" aria-label="On-screen stick: drag to move, let go to hold"></canvas>
+                <div class="joy-sel">
+                  <label class="field"><span>Stick moves</span><select id="joyMode"><option value="tip">the tip (top-view direction)</option>
+                    <option value="bend">the motors (push toward a motor to pull it)</option></select></label>
+                  <label class="field"><span>Stick control</span><select id="joyControl"><option value="rate">jog: deflection = speed</option>
+                    <option value="position">position: deflection = where to go</option></select></label>
+                </div>
+                <div class="joy-run">
+                  <div class="row"><button class="btn primary" id="joyStart">Start joystick</button><button class="btn" id="joyStop">Stop joystick</button></div>
+                  <div class="status" id="joyStatus" role="status">off</div>
+                  <div class="small muted" id="joyPad">on-screen stick (no gamepad)</div>
+                </div>
+              </div>
+              <details><summary>How the joystick works</summary>
+                <p class="hint"><b>Jog</b> (default): push to keep the target moving that way, faster the further you push; let go and it
+                  stays put, the next push continues from there. <b>Position</b>: the stick points at a spot (full deflection = edge of reach).
+                  <b>On-screen:</b> drag the stick with the mouse or a finger; let go to hold. <b>Gamepad:</b> left stick steers, hold
+                  <b>RT / R2</b> (or RB / R1) to move, <b>B / Circle</b> = torque off all (press any gamepad button first so the browser sees it).
+                  Moves follow the same pair rules and current limits. Invert x / y in Setup.</p></details>
+            </div>
+          </section>
+          </div>
+
+          <div class="side">
+            <section class="panel tip-panel" aria-labelledby="h-tip">
+              <div class="ph"><h2 id="h-tip">Tip</h2><span class="sp"></span><span class="pill" id="tipFeedChip">camera feed off</span></div>
+              <div class="pb" style="padding-top:4px">
+                <div class="fig"><span class="lab"><span class="src cam">CAMERA</span>tip x, z</span><span class="val lead live" id="tipMeas">—</span><span class="sub" id="tipMeasSub">height —</span></div>
+                <div class="figs rule">
+                  <div class="fig"><span class="lab"><span class="src model">MODEL</span>x, z</span><span class="val live" id="tipPred" style="font-size:20px">—</span><span class="sub" id="tipPredSub">from motor angles</span><span class="sub" id="tipModelChip" hidden></span></div>
+                  <div class="fig"><span class="lab">Bend dA, dB</span><span class="val live" id="tipPose" style="font-size:20px">—</span><span class="sub">motor pairs 0–2, 1–3</span></div>
+                </div>
+                <div class="fig clr"><span class="lab">Arm to marked rod</span>
+                  <span class="clr-row"><span class="val live" id="obsClrModel">—</span><span class="sub">model ·</span><span class="val live small-v" id="obsClrCam">—</span><span class="sub">camera</span></span>
+                  <span class="sub wrap" id="obsChip">—</span></div>
+              </div>
+            </section>
+
+            <section class="panel" aria-labelledby="h-move">
+              <div class="ph"><h2 id="h-move">Move tip to a target</h2></div>
+              <div class="pb" style="display:grid;gap:10px">
+                <div class="xz">
+                  <label class="field"><span>X (mm)</span><input type="number" id="tipX" step="1" inputmode="decimal"></label>
+                  <label class="field"><span>Z (mm)</span><input type="number" id="tipZ" step="1" inputmode="decimal"></label>
+                  <button class="btn primary" id="tipGo">Move tip</button>
+                </div>
+                <div class="row" style="justify-content:space-between"><label class="check"><input type="checkbox" id="tipClosed" checked> Correct with the camera</label><button class="btn" id="tipStop" style="flex:0 0 auto">Stop tip</button></div>
+                <div class="status" id="tipStatus" role="status">Idle</div>
+              </div>
+            </section>
+
+            <section class="panel motor-panel" aria-labelledby="h-map">
+              <div class="ph"><h2 id="h-map">Motors, seen from above</h2><span class="sp"></span><span class="small muted">pairs 0–2, 1–3</span></div>
+              <div class="pb"><div class="mmap" id="mapOp"><span class="hub" aria-hidden="true"></span></div></div>
+            </section>
           </div>
         </div>
-        <div class="joy-row">
-          <button class="primary" id="joyStart">Start joystick control</button>
-          <button id="joyStop">Stop</button>
-        </div>
-        <div class="tip-status" id="joyStatus" style="min-height:1.4em"></div>
-        <span class="hint" style="padding:0"><b>Jog</b> (default): push to keep the target moving that way, faster the
-          further you push; let go and it stays put, the next push continues from there.
-          <b>Position</b>: the stick points at a spot (full deflection = edge of reach). <b>On-screen:</b> drag the stick with the mouse or a finger; let go to hold.
-          <b>Gamepad:</b> left stick steers, hold <b>RT / R2</b> (or RB / R1) to move, <b>B / Circle</b> = torque off all
-          (press any gamepad button first so the browser sees it). Moves follow the same pair rules and current limits.</span>
-      </div>
-      <div class="joy-box obs-box">
-        <div class="joy-row"><h3>Obstacles</h3><span class="chip" id="obsChip">no rod</span></div>
-        <div class="tip-status" id="obsBars" style="min-height:1.4em"></div>
-        <label><input type="checkbox" id="obsAvoid"> Plan moves around it, arm at least
-          <input type="number" id="obsClearance" min="0" max="100" step="1"> mm clear</label>
-        <div class="readouts" style="grid-template-columns:repeat(2,1fr);margin:0">
-          <div><span>Arm clearance (model)</span><span id="obsClrModel">—</span></div>
-          <div><span>Arm clearance (camera)</span><span id="obsClrCam">—</span></div>
-        </div>
-        <div class="joy-row">
-          <button id="obsPick" title="Then click a rod in the camera view; only that colour is looked for until Forget">Pick rod colour</button>
-          <button id="obsMark" title="Then click the rod's two ends in the camera view (any colour)">Mark rod ends</button>
-          <button id="obsForget" title="Forget the marked rod, the detected rods and a picked colour">Forget rods</button>
-        </div>
-        <div class="tip-status" id="obsStatus" style="min-height:1.4em"></div>
-        <span class="hint" style="padding:0">tip_feed.py finds the <b>orange</b> and <b>red</b> rods by itself (or the
-          colour you pick), and other objects of those colours or <b>green</b> (a tray, a piece: shape, size and the surface the
-          camera sees; touching pieces are split; a tray's shaped pockets are found from depth),
-          and measures them with the depth camera; they are shown in the views but <b>not avoided</b>.
-          <b>Mark rod ends</b> works for any colour (e.g. the grey prototype): click both ends in the camera view; it stays
-          until you press Forget, and only this rod is avoided. Moves to a target then follow a path that
-          keeps the whole arm (constant-curvature model) clear of the rod, curling it over the rod when that is the only way
-          round, and the joystick slides along the rod instead of pushing into it. Clearance is from the arm's centreline to
-          the rod's surface: allow for the disc radius plus the model error (±10 mm).</span>
-      </div>
-      <p class="hint" style="padding:0;margin:0">Needs a fitted model (<code>fit_tip_model.py</code>) and, for closed loop,
-        the camera feed (<code>~/emio-venv/bin/python tip_feed.py</code>). Moves follow the pair rules
-        (one cable of each opposing pair pulls at a time). Stop / Esc / TORQUE OFF ALL interrupt a move.</p>
-    </div>
-  </div>
-  <div class="view scene-view">
-    <span class="view-title">3D view — drag to orbit, right-drag to pan, scroll to zoom; double-click the tip surface to
-      preview a move there</span>
-    <div class="scene-tools">
-      <label><input type="checkbox" id="sceneCloud" checked> camera point cloud</label>
-      <label>within <input type="number" id="sceneCrop" value="250" min="0" step="25"> mm of the arm (0 = all)</label>
-      <label><input type="checkbox" id="sceneSurface" checked> tip surface</label>
-      <label><input type="checkbox" id="sceneZone" checked> clearance zone</label>
-      <label><input type="checkbox" id="sceneArmCam" checked> arm from camera</label>
-      <label><input type="checkbox" id="scenePath" checked> planned path</label>
-      <span class="row" style="margin:0"><button id="sceneFront">Front</button><button id="sceneTop">Top</button>
-        <button id="sceneCam" title="From the depth camera's position, to compare with the live image" disabled>Camera's view</button>
-        <button id="scenePlay" disabled title="Animate the arm along the planned path">Play path</button></span>
-    </div>
-    <div class="scene-box" id="sceneBox"><canvas id="sceneCanvas"></canvas><span class="scene-hover" id="sceneHover"></span>
-      <span class="cam-note" id="sceneNote" style="position:absolute;inset:0;display:none;place-items:center">Needs a fitted tip model
-        (<code>fit_tip_model.py</code>)</span></div>
-    <div class="legend"><span><i style="background:var(--accent)"></i>arm (model, from motor angles)</span>
-      <span><i style="background:var(--ok)"></i>arm through the tracked tip (camera)</span>
-      <span><i style="background:var(--warn)"></i>marked rod · faint: clearance zone · rods and objects found by colour in their colour (not avoided)</span>
-      <span><i style="background:color-mix(in srgb, var(--accent) 40%, transparent);border-radius:0"></i>tip surface (tip-mode reach),
-        <i style="background:var(--warn);border-radius:0"></i>arm within clearance, <i style="background:var(--danger);border-radius:0"></i>arm touches rod</span>
-      <span><i style="background:var(--danger)"></i>target · dashed: tip path, faint arms: shapes along it</span>
-      <span>points: depth camera (large: obstacle colour) · arrows: <span style="color:#e0533d">+x</span>
-        <span style="color:#3d7be0">+z</span></span> <span id="sceneCloudInfo" hidden></span></div>
-    <div class="tip-status" id="sceneMsg" style="min-height:1.4em"></div>
-  </div>
-  <div class="view cam-view">
-    <span class="view-title" id="camTitle">Camera (live) — tracked marker outlined, rod colours in magenta, found rods in their colour</span>
-    <div class="cam-box" id="camBox"><img id="camImg" alt="Live camera view">
-      <span class="cam-note" id="camNote">Camera view off: run <code>~/emio-venv/bin/python tip_feed.py</code></span></div>
-  </div>
-</section>
-<p class="hint">Torque must be on before a motor will move. Turning torque on holds the current position.
-  Commands are clamped to the soft limits and the motor's firmware limits. Angles use the emioapi convention
-  (pulse 2048 = 0°) until you calibrate; after that, angle, goal, slider and jog are relative to the
-  calibrated 0 (stored in data/settings.json; the motor itself is not changed). "Absolute" is the emioapi angle.
-  Cable displacement = (angle − zero) × drum radius. <kbd>Esc</kbd> = torque off all.</p>
+      </section>
 
-<template id="card-tpl">
-  <section class="card">
-    <div class="card-head">
-      <h2></h2><span class="chip model"></span><span class="chip moving" style="visibility:hidden">moving</span>
-      <span class="chip uncal" hidden title="Angles are relative to emioapi's zero (pulse 2048) until calibrated">uncalibrated</span>
-      <span class="chip err" hidden></span>
-      <span class="chip err override" hidden title="This motor's goal was changed by another program on the motor bus, e.g. an Emio Labs / SOFA scene with Robot connection on. Close it.">overridden by another program</span>
-      <label class="switch"><input type="checkbox" class="torque"><span>Torque</span></label>
-    </div>
-    <div class="big"><span class="pulse">—</span><small>pulses</small></div>
-    <div class="readouts">
-      <div><span>Angle</span><span class="deg">—</span></div>
-      <div><span>Radians</span><span class="rad">—</span></div>
-      <div><span>Cable</span><span class="cable">—</span></div>
-      <div><span>Goal</span><span class="goal">—</span></div>
-      <div><span>Velocity</span><span class="vel">—</span></div>
-      <div><span>Current</span><span class="cur">—</span></div>
-      <div><span>Absolute</span><span class="abs">—</span></div>
-      <div><span>Zero at</span><span class="zeroat">—</span></div>
-    </div>
-    <input type="range" class="slider" step="0.1">
-    <div class="range-labels"><span class="lo"></span><span class="clampnote" hidden>at limit: command clamped</span><span class="hi"></span></div>
-    <div class="row">
-      <button data-jog="-5">−5°</button><button data-jog="-1">−1°</button>
-      <button data-jog="1">+1°</button><button data-jog="5">+5°</button>
-      <input type="number" class="target" step="0.1" style="width:62px" title="Target angle (deg)"><button class="go">Go</button>
-    </div>
-    <div class="row">
-      <button class="reboot danger" hidden title="Clears the hardware error. Release any cable tension first: the motor comes back with torque off.">Reboot motor</button>
-      <button class="zero" title="Calibrate: the current position becomes 0 (angle and cable displacement)">Calibrate: set 0 here</button>
-      <span class="chip temp"></span>
-    </div>
-    <details>
-      <summary>Settings</summary>
-      <div class="settings">
-        <label>Drum radius (mm)</label><input type="number" class="radius" step="0.1" min="0.1">
-        <label>Invert cable sign</label><input type="checkbox" class="invert">
-        <label>Soft min (° absolute)</label><input type="number" class="smin" step="1">
-        <label>Soft max (° absolute)</label><input type="number" class="smax" step="1">
-        <span></span><div class="row" style="margin:0"><button class="save">Save</button><button class="clearzero">Clear calibration</button></div>
-      </div>
-    </details>
-  </section>
-</template>
+      <!-- ================= Motors ================= -->
+      <section class="screen" id="scr-motors" aria-labelledby="h-motors" hidden>
+        <div class="titlerow"><h1 id="h-motors">Motors</h1><p class="finding" id="motorsFinding">—</p></div>
+        <div class="mot-grid">
+          <section class="panel" aria-labelledby="h-map2">
+            <div class="ph"><h2 id="h-map2">Seen from above</h2><span class="sp"></span><span class="small muted">pairs A: 0–2 · B: 1–3</span></div>
+            <div class="pb"><div class="mmap big" id="mapMot"><span class="hub" aria-hidden="true"></span></div></div>
+          </section>
+          <section class="panel" aria-labelledby="mdTitle" id="mdetail">
+            <div class="md-head">
+              <h2 id="mdTitle">Motor 0</h2><span class="muted" id="mdWhere">top right</span><span id="mdFlags" class="row" style="gap:6px"></span>
+              <span class="sp"></span>
+              <label class="switch"><input type="checkbox" id="mdTorque"> Torque</label>
+            </div>
+            <div class="md-body">
+              <div class="md-alerts" id="mdAlerts"></div>
+              <div class="md-pos">
+                <div class="fig"><span class="lab">Angle from zero</span><span class="val live" id="mdAngle">—</span></div>
+                <div class="fig"><span class="lab">Goal</span><span class="val live" id="mdGoal" style="font-size:24px">—</span></div>
+                <div class="fig"><span class="lab">Current · temperature</span><span class="val live" id="mdCur" style="font-size:24px">—</span></div>
+              </div>
+              <div class="slider-wrap">
+                <input type="range" id="mdSlider" step="0.1" aria-label="Goal angle">
+                <div class="range-labels"><span id="mdLo">—</span><span class="clampnote" id="mdClamp" hidden>at limit: command clamped</span><span id="mdHi">—</span></div>
+              </div>
+              <div class="jog">
+                <button class="btn" data-jog="-5">−5°</button><button class="btn" data-jog="-1">−1°</button>
+                <button class="btn" data-jog="1">+1°</button><button class="btn" data-jog="5">+5°</button>
+                <input type="number" id="mdTarget" step="0.1" aria-label="Target angle in degrees" placeholder="target °"><button class="btn go" id="mdGo">Go</button>
+              </div>
+              <p class="small muted" id="mdMoveHint">Turn torque on to move this motor. Torque on holds the current position.</p>
+              <div class="row">
+                <button class="btn stop" id="mdReboot" hidden title="Clears the hardware error. Release any cable tension first: the motor comes back with torque off.">Reboot motor</button>
+                <button class="btn" id="mdZero" title="The current position becomes 0 (angle and cable displacement)">Calibrate: set 0 here</button>
+              </div>
+              <div class="tele-grid">
+                <table class="tele"><tbody>
+                  <tr><th>Cable</th><td id="tCable" class="live">—</td></tr><tr><th>Velocity</th><td id="tVel" class="live">—</td></tr>
+                  <tr><th>Current (measured)</th><td id="tCur" class="live">—</td></tr><tr><th>Temperature</th><td id="tTemp" class="live">—</td></tr>
+                </tbody></table>
+                <table class="tele"><tbody>
+                  <tr><th>Pulses</th><td id="tPulse" class="live">—</td></tr><tr><th>Radians</th><td id="tRad" class="live">—</td></tr>
+                  <tr><th>Absolute</th><td id="tAbs" class="live">—</td></tr><tr><th>Zero at</th><td id="tZero">—</td></tr>
+                </tbody></table>
+              </div>
+              <details id="mdSettings"><summary>Drum, cable sign and soft limits</summary>
+                <div class="settings-form">
+                  <label class="field"><span>Drum radius (mm)</span><input type="number" id="mdRadius" step="0.1" min="0.1"></label>
+                  <label class="field"><span>Soft min (° absolute)</span><input type="number" id="mdMin" step="1"></label>
+                  <label class="field"><span>Soft max (° absolute)</span><input type="number" id="mdMax" step="1"></label>
+                  <label class="check"><input type="checkbox" id="mdInvert"> Invert cable sign</label>
+                </div>
+                <div class="row" style="margin-top:12px"><button class="btn primary" id="mdSave" style="flex:0 0 auto">Save</button>
+                  <button class="btn" id="mdClear" style="flex:0 0 auto">Clear calibration</button><span class="small muted" id="mdModel"></span></div>
+              </details>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ================= Setup ================= -->
+      <section class="screen" id="scr-setup" aria-labelledby="h-setup" hidden>
+        <div class="titlerow"><h1 id="h-setup">Setup</h1><p class="finding muted">Connection, calibration, obstacles and display. Changes apply at once.</p></div>
+        <section class="set">
+          <div><h2>Connection</h2><p>The EMIO's USB serial port. Connecting never moves anything.</p></div>
+          <div class="panel">
+            <div class="xz" style="grid-template-columns:minmax(0,1fr) auto auto">
+              <label class="field"><span>Serial port</span><select id="port"><option value="">auto (first FTDI)</option></select></label>
+              <button class="btn primary" id="connect">Connect</button><button class="btn" id="disconnect">Disconnect</button>
+            </div>
+            <p class="small muted" id="connDetail">—</p>
+          </div>
+        </section>
+        <section class="set">
+          <div><h2>Calibration</h2><p>Each motor's zero is where its cable just goes taut. Stored in data/settings.json; the motors themselves are not changed.</p></div>
+          <div class="panel">
+            <table class="cal-list"><thead><tr><th>Motor</th><th class="num">Zero at (absolute)</th><th class="num">Angle now</th><th><span class="sr">Action</span></th></tr></thead><tbody id="calRows"></tbody></table>
+            <div class="row"><button class="btn" id="calall" style="flex:0 0 auto">Calibrate all: set every motor's 0 here…</button></div>
+          </div>
+        </section>
+        <section class="set">
+          <div><h2>Tip model</h2><p>Maps motor angles to the tip position. Fitted from camera data by fit_tip_model.py.</p></div>
+          <div class="panel"><div id="modelInfo" class="notes">—</div></div>
+        </section>
+        <section class="set">
+          <div><h2>Obstacles</h2><p>tip_feed.py finds orange and red rods (or a picked colour) and objects, and measures them with the depth camera. Only a marked rod is avoided.</p></div>
+          <div class="panel">
+            <label class="check"><input type="checkbox" id="obsAvoid"> Plan moves around the marked rod</label>
+            <div class="xz" style="grid-template-columns:200px 1fr"><label class="field"><span>Keep the arm this far from it (mm)</span><input type="number" id="obsClearance" min="0" max="100" step="1"></label>
+              <p class="small muted" style="align-self:end;padding-bottom:12px">From the arm's centreline to the rod's surface: allow for the disc radius plus the model error (±10 mm).</p></div>
+            <div class="row" style="gap:8px">
+              <button class="btn" id="obsPick" style="flex:0 0 auto" title="Then click a rod in the camera view; only that colour is looked for until Forget">Pick rod colour</button>
+              <button class="btn" id="obsMark" style="flex:0 0 auto" title="Then click the rod's two ends in the camera view (any colour)">Mark rod ends</button>
+              <button class="btn" id="obsForget" style="flex:0 0 auto" title="Forget the marked rod, the detected rods and a picked colour">Forget rods</button>
+            </div>
+            <p class="small" id="obsStatus" role="status"></p>
+            <p class="small muted" id="obsBars"></p>
+            <details><summary>How obstacle avoidance works</summary>
+              <p class="hint">tip_feed.py finds the <b>orange</b> and <b>red</b> rods by itself (or the colour you pick), and other objects of those
+                colours or <b>green</b> (a tray, a piece: shape, size and the surface the camera sees; touching pieces are split; a tray's shaped pockets
+                are found from depth), and measures them with the depth camera; they are shown in the views but <b>not avoided</b>.
+                <b>Mark rod ends</b> works for any colour (e.g. the grey prototype): click both ends in the camera view; it stays until you press
+                Forget, and only this rod is avoided. Moves to a target then follow a path that keeps the whole arm (constant-curvature model)
+                clear of the rod, curling it over the rod when that is the only way round, and the joystick slides along the rod instead of
+                pushing into it. The clearance is a model estimate, not a guarantee.</p></details>
+          </div>
+        </section>
+        <section class="set">
+          <div><h2>Joystick</h2><p>For a gamepad whose stick runs the wrong way.</p></div>
+          <div class="panel"><div class="opts"><label class="check"><input type="checkbox" id="joyInvX"> Invert x</label><label class="check"><input type="checkbox" id="joyInvY"> Invert y</label></div></div>
+        </section>
+        <section class="set">
+          <div><h2>3D view</h2><p>What the 3D tab on Operate draws.</p></div>
+          <div class="panel">
+            <div class="opts">
+              <label class="check"><input type="checkbox" id="sceneCloud" checked> Camera point cloud</label>
+              <label class="check"><input type="checkbox" id="sceneSurface" checked> Tip surface</label>
+              <label class="check"><input type="checkbox" id="sceneZone" checked> Clearance zone</label>
+              <label class="check"><input type="checkbox" id="sceneArmCam" checked> Arm from camera</label>
+              <label class="check"><input type="checkbox" id="scenePath" checked> Planned path</label>
+            </div>
+            <label class="field" style="max-width:280px"><span>Show the point cloud within (mm of the arm, 0 = all)</span><input type="number" id="sceneCrop" value="250" min="0" step="25"></label>
+          </div>
+        </section>
+        <section class="set">
+          <div><h2>Reference</h2><p>Conventions and commands for engineers.</p></div>
+          <div class="panel notes">
+            <p><b>Torque.</b> Must be on before a motor moves; turning it on holds the current position. TORQUE OFF ALL (Esc, or B / Circle on a gamepad) makes every motor go limp; nothing holds the arm.</p>
+            <p><b>Stops.</b> Hold all stops tip control and freezes powered motors where they are. Stop tip ends a tip move; Stop joystick ends joystick control; both hold.</p>
+            <p><b>Limits.</b> Commands are clamped to the soft limits and the motor's firmware limits. Tip moves follow the pair rules (0/2 and 1/3 oppose; only one cable of each pair pulls), back off above 1000 mA and release everything above 1100 mA.</p>
+            <p><b>Angles.</b> emioapi convention (pulse 2048 = 0°) until calibrated; after that angle, goal, slider and jog are relative to the calibrated 0. "Absolute" is the emioapi angle. Cable displacement = (angle − zero) × drum radius.</p>
+            <p><b>Programs.</b> Camera feed: <code>~/emio-venv/bin/python tip_feed.py</code>. Model: <code>fit_tip_model.py</code>. Close Emio Labs / SOFA first: a running scene overrides the motors.</p>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+</div>
+
+<dialog id="confirm" aria-labelledby="cfTitle" aria-describedby="cfText">
+  <h2 id="cfTitle">Confirm</h2><p id="cfText"></p>
+  <div class="row"><button class="btn" id="cfNo" value="no">Cancel</button><button class="btn primary" id="cfYes" value="yes">Confirm</button></div>
+</dialog>
 
 <script>
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const deg = r => r * 180 / Math.PI, rad = d => d * Math.PI / 180;
-const goalFor = (i, a) => api(`/api/motor/${i}/goal`, { angle_rad: a, relative: true })
-  .then(r => { if (r.clamped) flashClamp(i); }).catch(() => {});
-function flashClamp(i) {
-  const n = $(".clampnote", cards[i].el); n.hidden = false;
-  clearTimeout(cards[i].clampTimer); cards[i].clampTimer = setTimeout(() => n.hidden = true, 2500);
-}
 // Hardware Error Status bits, see https://emanual.robotis.com/docs/en/dxl/x/xm430-w210/#hardware-error-status
 const HW_ERRORS = { 1: "input voltage", 4: "overheating", 8: "encoder", 16: "electrical shock", 32: "overload" };
 const hwText = e => Object.entries(HW_ERRORS).filter(([b]) => e & b).map(([, t]) => t).join(", ") || `code ${e}`;
-const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : v.toFixed(d);
-let state = null;
-const cards = [];
+const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : (v < 0 && +v.toFixed(d) !== 0 ? "−" : "") + Math.abs(v).toFixed(d);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const POS_WORDS = ["top right", "top left", "bottom left", "bottom right"];  // motors 0..3 on the robot, seen from above
+let state = null, wsOpen = false, wsClosedAt = 0;
 
 async function api(path, body) {
   const res = await fetch(path, { method: body === undefined ? "GET" : "POST",
@@ -328,7 +660,9 @@ async function api(path, body) {
   if (!res.ok) { showError(data.detail ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : res.statusText); throw data; }
   return data;
 }
-function showError(msg) { const e = $("#error"); e.textContent = msg; e.style.display = msg ? "block" : "none"; }
+// a refused command becomes a notice in the alert band (cleared by the next success, or after 10 s)
+let lastError = null;
+function showError(msg) { lastError = msg ? { msg, t: Date.now() } : null; renderAlerts(); }
 
 function throttle(fn, ms) {
   let last = 0, timer = null, args;
@@ -336,114 +670,323 @@ function throttle(fn, ms) {
     if (now - last >= ms) { last = now; fn(...args); }
     else { clearTimeout(timer); timer = setTimeout(() => { last = Date.now(); fn(...args); }, ms - (now - last)); } };
 }
-
-for (let i = 0; i < 4; i++) {
-  const el = $("#card-tpl").content.firstElementChild.cloneNode(true);
-  $("h2", el).textContent = `Motor ${i}`;
-  const c = { el, dragging: false, settingsLoaded: false };
-  const sendGoal = throttle(d => goalFor(i, rad(d)), 60);
-  const slider = $(".slider", el);
-  slider.addEventListener("pointerdown", () => c.dragging = true);
-  slider.addEventListener("input", () => sendGoal(+slider.value));
-  $(".torque", el).addEventListener("change", e => api(`/api/motor/${i}/torque`, { on: e.target.checked }).then(() => showError("")).catch(() => {}));
-  el.querySelectorAll("[data-jog]").forEach(b => b.addEventListener("click", () => {
-    const m = state.motors[i], base = m.goal_rel_rad ?? m.angle_rel_rad;
-    goalFor(i, base + rad(+b.dataset.jog));
-  }));
-  $(".go", el).addEventListener("click", () => goalFor(i, rad(+$(".target", el).value)));
-  $(".reboot", el).addEventListener("click", () => {
-    if (confirm(`Reboot motor ${i}? Release cable tension first. It restarts with torque off.`))
-      api(`/api/motor/${i}/reboot`, {}).then(() => showError("")).catch(() => {});
+// an accessible confirmation, standing in for window.confirm(); Esc cancels it (and does not torque off)
+function confirmBox(title, text, yes) {
+  const d = $("#confirm");
+  $("#cfTitle").textContent = title; $("#cfText").textContent = text; $("#cfYes").textContent = yes;
+  return new Promise(res => {
+    const done = v => { d.close(); $("#cfYes").onclick = $("#cfNo").onclick = null; res(v); };
+    $("#cfYes").onclick = () => done(true); $("#cfNo").onclick = () => done(false);
+    d.oncancel = e => { e.preventDefault(); done(false); };
+    d.showModal(); $("#cfNo").focus();
   });
-  $(".zero", el).addEventListener("click", () => api(`/api/motor/${i}/zero`, {}).catch(() => {}));
-  $(".save", el).addEventListener("click", () => api(`/api/motor/${i}/settings`, {
-    radius_mm: +$(".radius", el).value, invert: $(".invert", el).checked,
-    min_deg: +$(".smin", el).value, max_deg: +$(".smax", el).value }).then(() => showError("")).catch(() => {}));
-  $(".clearzero", el).addEventListener("click", () => api(`/api/motor/${i}/settings`, { clear_zero: true }).catch(() => {}));
-  $("#cards").appendChild(el);
-  cards.push(c);
 }
 
+// ---------------- screens, theme ----------------
+let screen = "operate";
+function showScreen(name) {
+  screen = name;
+  $$(".rail [data-screen]").forEach(b => { if (b.dataset.screen === name) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+  ["operate", "motors", "setup"].forEach(s => $(`#scr-${s}`).hidden = s !== name);
+  if (state) render(state);
+}
+$$(".rail [data-screen]").forEach(b => b.addEventListener("click", () => showScreen(b.dataset.screen)));
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $("#themeLabel").textContent = t === "dark" ? "Day" : "Night";
+  $("#themeBtn").setAttribute("aria-pressed", t === "dark");
+  try { localStorage.setItem("emio-theme", t); } catch { }
+  window.dispatchEvent(new Event("themechange"));
+  if (state) render(state);
+}
+$("#themeBtn").addEventListener("click", () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
+try { const t = new URLSearchParams(location.search).get("theme") || localStorage.getItem("emio-theme"); if (t === "dark" || t === "night") setTheme("dark"); } catch { }
+
+// ---------------- motors: the map (Operate + Motors) and the detail ----------------
+let selMotor = 0;
+const mapCells = { op: [], mot: [] };
+const MAP_ORDER = [1, 0, 2, 3];  // grid order: top-left, top-right, bottom-left, bottom-right
+for (const [key, id] of [["op", "#mapOp"], ["mot", "#mapMot"]]) {
+  MAP_ORDER.forEach(i => {
+    const b = document.createElement("button");
+    b.className = "mcell"; b.type = "button"; b.dataset.motor = i;
+    b.innerHTML = `<span class="n">${i}</span><span class="mid"><span class="st">—</span><span class="pos">${POS_WORDS[i]}</span><span class="flags"></span></span>
+      <span class="ang live">—</span><span class="tel live">—</span>`;
+    b.addEventListener("click", () => { selectMotor(i); if (key === "op") showScreen("motors"); });
+    $(id).appendChild(b);
+    mapCells[key][i] = b;
+  });
+}
+function motorState(m, s) {
+  if (!s.connected) return { word: "Unknown", cls: "off" };
+  if (!m.online) return { word: "No response", cls: "fault" };
+  if (m.hw_error) return { word: `Fault: ${hwText(m.hw_error)}`, cls: "fault" };
+  if (!m.torque) return { word: "Torque off", cls: "" };
+  return { word: m.moving ? "Moving" : "Holding", cls: "" };
+}
+const curText = m => !m.online ? "—" : m.ma_per_unit ? `${fmt(m.current_raw * m.ma_per_unit, 0)} mA` : `${m.current_raw} u (raw)`;
+function renderMap(s) {
+  for (const key of ["op", "mot"]) s.motors.forEach((m, i) => {
+    const b = mapCells[key][i], st = motorState(m, s);
+    b.className = `mcell ${st.cls}`;
+    b.setAttribute("aria-pressed", key === "mot" && i === selMotor);
+    b.setAttribute("aria-label", `Motor ${i}, ${POS_WORDS[i]}: ${st.word}`);
+    $(".st", b).textContent = st.word;
+    $(".ang", b).textContent = m.online ? `${fmt(deg(m.angle_rel_rad), 1)}°` : "—";
+    $(".tel", b).textContent = m.online ? `${curText(m)} · ${m.temp_c ?? "—"} °C` : s.connected ? "no reply" : "no data";
+    const flags = [m.online && m.overridden && `<span class="pill warn">overridden</span>`, m.online && !m.calibrated && `<span class="pill">uncalibrated</span>`,
+      clampedRecently(i) && `<span class="pill warn">clamped</span>`].filter(Boolean).join("");
+    const f = $(".flags", b); if (f.innerHTML !== flags) f.innerHTML = flags;
+  });
+}
+const clampAt = {};
+const clampedRecently = i => clampAt[i] && Date.now() - clampAt[i] < 2500;
+const goalFor = (i, a) => api(`/api/motor/${i}/goal`, { angle_rad: a, relative: true })
+  .then(r => { if (r.clamped) { clampAt[i] = Date.now(); if (state) render(state); } showError(""); }).catch(() => {});
+
+// detail of the selected motor
+let sliderDragging = false, settingsDirty = false;
+const sendGoal = throttle(d => goalFor(selMotor, rad(d)), 60);
+function selectMotor(i) { selMotor = i; settingsDirty = false; $("#mdTarget").value = ""; if (state) render(state); }
+$("#mdSlider").addEventListener("pointerdown", () => sliderDragging = true);
+$("#mdSlider").addEventListener("input", () => sendGoal(+$("#mdSlider").value));
+document.addEventListener("pointerup", () => sliderDragging = false);
+$("#mdTorque").addEventListener("change", e => api(`/api/motor/${selMotor}/torque`, { on: e.target.checked }).then(() => showError("")).catch(() => {}));
+$$("#mdetail [data-jog]").forEach(b => b.addEventListener("click", () => {
+  const m = state.motors[selMotor], base = m.goal_rel_rad ?? m.angle_rel_rad;
+  goalFor(selMotor, base + rad(+b.dataset.jog));
+}));
+$("#mdGo").addEventListener("click", () => { if ($("#mdTarget").value !== "") goalFor(selMotor, rad(+$("#mdTarget").value)); });
+$("#mdTarget").addEventListener("keydown", e => { if (e.key === "Enter") $("#mdGo").click(); });
+async function rebootMotor(i) {
+  if (await confirmBox(`Reboot motor ${i}?`, `Reboot motor ${i}? Release cable tension first. It restarts with torque off.`, `Reboot motor ${i}`))
+    api(`/api/motor/${i}/reboot`, {}).then(() => showError("")).catch(() => {});
+}
+$("#mdReboot").addEventListener("click", () => rebootMotor(selMotor));
+$("#mdZero").addEventListener("click", () => api(`/api/motor/${selMotor}/zero`, {}).catch(() => {}));
+["#mdRadius", "#mdMin", "#mdMax", "#mdInvert"].forEach(s => $(s).addEventListener("input", () => settingsDirty = true));
+$("#mdSave").addEventListener("click", () => api(`/api/motor/${selMotor}/settings`, {
+  radius_mm: +$("#mdRadius").value, invert: $("#mdInvert").checked, min_deg: +$("#mdMin").value, max_deg: +$("#mdMax").value })
+  .then(() => { settingsDirty = false; showError(""); }).catch(() => {}));
+$("#mdClear").addEventListener("click", () => api(`/api/motor/${selMotor}/settings`, { clear_zero: true }).catch(() => {}));
+
+function renderDetail(s) {
+  const i = selMotor, m = s.motors[i], zero = m.settings.zero_rad ?? 0, st = motorState(m, s);
+  $("#mdTitle").textContent = `Motor ${i}`;
+  $("#mdWhere").textContent = `${POS_WORDS[i]} · pair ${i % 2 === 0 ? "A" : "B"} with motor ${(i + 2) % 4} · ${st.word}`;
+  $("#mdFlags").innerHTML = [m.online && m.moving && `<span class="pill data">moving</span>`, m.online && !m.calibrated && `<span class="pill">uncalibrated</span>`,
+    m.online && m.overridden && `<span class="pill warn">overridden by another program</span>`].filter(Boolean).join("");
+  const tq = $("#mdTorque"); tq.checked = !!(m.online && m.torque); tq.disabled = !m.online || (!!m.hw_error && !m.torque);
+  $("#mdAngle").textContent = m.online ? `${fmt(deg(m.angle_rel_rad), 2)}°` : "—";
+  $("#mdGoal").textContent = m.online && m.goal_rel_rad !== null ? `${fmt(deg(m.goal_rel_rad), 1)}°` : "—";
+  $("#mdCur").textContent = m.online ? `${curText(m)} · ${m.temp_c ?? "—"} °C` : "—";
+  const [lo, hi] = m.limits_rad.map(r => deg(r - zero)), sl = $("#mdSlider");
+  sl.min = lo; sl.max = hi;
+  $("#mdLo").textContent = `${fmt(lo, 0)}°`; $("#mdHi").textContent = `${fmt(hi, 0)}°`;
+  if (!sliderDragging && m.online) sl.value = deg(m.torque && m.goal_rel_rad !== null ? m.goal_rel_rad : m.angle_rel_rad);
+  $("#mdClamp").hidden = !clampedRecently(i);
+  const canMove = m.online && m.torque;
+  sl.disabled = !canMove; $$("#mdetail [data-jog], #mdGo").forEach(b => b.disabled = !canMove);
+  $("#mdMoveHint").textContent = !s.connected ? "Not connected: readings are unknown." : !m.online ? "This motor is not answering."
+    : m.hw_error ? "Release cable tension, then reboot the motor. It restarts with torque off." : m.torque ? "Commands are clamped to the soft limits."
+    : "Turn torque on to move this motor. Torque on holds the current position.";
+  $("#mdReboot").hidden = !m.hw_error; $("#mdReboot").textContent = `Reboot motor ${i}…`;
+  $("#mdZero").disabled = !m.online;
+  $("#tPulse").textContent = m.online ? m.pulse : "—";
+  $("#tRad").textContent = m.online ? fmt(m.angle_rel_rad, 4) : "—";
+  $("#tCable").textContent = m.cable_mm !== undefined && m.online ? `${fmt(m.cable_mm, 2)} mm` : "—";
+  $("#tVel").textContent = m.online ? `${fmt(m.velocity_rpm, 1)} rpm` : "—";
+  $("#tCur").textContent = curText(m);
+  $("#tTemp").textContent = m.online && m.temp_c !== null ? `${m.temp_c} °C` : "—";
+  $("#tAbs").textContent = m.online ? `${fmt(deg(m.angle_rad), 2)}°` : "—";
+  $("#tZero").textContent = m.calibrated ? `${fmt(deg(zero), 2)}° absolute` : "not set";
+  $("#mdModel").textContent = m.model ? `${m.model}${m.ma_per_unit ? ` · ${m.ma_per_unit} mA per unit` : ""}` : "";
+  if (!settingsDirty && !$("#mdetail").contains(document.activeElement && document.activeElement.closest("#mdSettings"))) {
+    $("#mdRadius").value = m.settings.radius_mm; $("#mdInvert").checked = m.settings.invert;
+    $("#mdMin").value = m.settings.min_deg; $("#mdMax").value = m.settings.max_deg;
+  }
+  const mine = currentAlerts.filter(a => a.motor === i);
+  const html = mine.map(a => `<div class="md-alert ${a.level}"><span><b>${esc(a.title)}</b> · ${esc(a.detail)}</span>`
+    + (a.actions.find(x => x.id === "reboot") ? `<button class="btn" data-reboot="${i}">Reboot motor ${i}…</button>` : "<span></span>") + `</div>`).join("");
+  if ($("#mdAlerts").innerHTML !== html) $("#mdAlerts").innerHTML = html;
+}
+$("#mdAlerts").addEventListener("click", e => { const b = e.target.closest("[data-reboot]"); if (b) rebootMotor(+b.dataset.reboot); });
+
+// ---------------- alerts ----------------
+const LEVEL_RANK = { fault: 0, warning: 1, caution: 2, notice: 3 };
+const LEVEL_WORD = { fault: "Fault", warning: "Warning", caution: "Caution", notice: "Notice" };
+const LEVEL_ICON = {
+  fault: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="currentColor"/><path d="M8 6v3.6M8 11.4v.1" stroke="var(--pill-negative-bg)" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  warning: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6v3.6M8 11.4v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  caution: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7v4.2M8 4.7v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  notice: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7v4.2M8 4.7v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+};
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function deriveAlerts(s) {
+  const out = [], add = a => out.push({ measure: [], actions: [], raw: "", ...a });
+  if (!wsOpen && state) add({ id: "server", level: "fault", source: "Control server", title: "Server unreachable — retrying",
+    detail: `No updates from the control server for ${Math.round((Date.now() - wsClosedAt) / 1000)} s. Every reading on screen is stale until it reconnects.`, raw: "WebSocket /ws closed" });
+  if (lastError && Date.now() - lastError.t < 10000) add({ id: "cmd", level: "notice", source: "Command refused", title: lastError.msg, detail: "The control server did not carry out the last command." });
+  if (!s) return out;
+  if (!s.connected) add({ id: "disconnected", level: "fault", source: "Robot connection", title: "Robot disconnected",
+    detail: s.error ? `${s.error}. Motor readings are unknown. Check USB and power, then connect.` : "Not connected. Motor readings are unknown.",
+    raw: s.error || "connected = false", actions: [{ id: "connect", label: "Connect" }] });
+  s.motors.forEach(m => {
+    const src = `Motor ${m.id}`;
+    if (m.online && m.hw_error) add({ id: `hw${m.id}`, motor: m.id, level: "fault", source: src, title: `Hardware error: ${hwText(m.hw_error)}`,
+      detail: "The motor switched its torque off. Release cable tension, then reboot it; it restarts with torque off.",
+      measure: [["Measured current", curText(m)], ["Temperature", m.temp_c != null ? `${m.temp_c} °C` : "—"], ["Torque", m.torque ? "on" : "off"]],
+      raw: `Hardware Error Status = ${m.hw_error} (0x${m.hw_error.toString(16).padStart(2, "0")})`, actions: [{ id: "reboot", motor: m.id, label: `Reboot motor ${m.id}…` }] });
+    if (s.connected && !m.online) add({ id: `off${m.id}`, motor: m.id, level: "fault", source: src, title: "Not responding",
+      detail: "No reply on the motor bus. Check its cable and power.", raw: "online = false" });
+    if (m.online && m.overridden) add({ id: `ovr${m.id}`, motor: m.id, level: "warning", source: src, title: "Commands overridden by another program",
+      detail: "Its goal was changed by another program on the motor bus, e.g. an Emio Labs / SOFA scene with Robot connection on. Close it.", raw: "overridden = true" });
+    if (m.online && !m.calibrated) add({ id: `cal${m.id}`, motor: m.id, level: "caution", source: src, title: "Not calibrated",
+      detail: "Angles are relative to emioapi's zero (pulse 2048). Tip control needs every motor's taut zero.", raw: "settings.zero_rad = null",
+      actions: [{ id: "motor", motor: m.id, label: "Open motor" }] });
+    if (clampedRecently(m.id)) add({ id: `clamp${m.id}`, motor: m.id, level: "notice", source: src, title: "Command clamped at limit",
+      detail: "The goal was limited to the motor's soft range.", raw: "goal response: clamped = true" });
+  });
+  const t = s.tip;
+  if (t) {
+    if (!t.model) add({ id: "nomodel", level: "caution", source: "Tip model", title: "No tip model",
+      detail: "Tip mapping, Move tip and obstacle planning are unavailable. Motor controls and the motor-pair joystick still work.", raw: "run fit_tip_model.py" });
+    if (s.connected) {
+      if (!t.feed) add({ id: "feedoff", level: "caution", source: "Camera", title: "Camera feed off",
+        detail: "No tip position from the camera. Moves run open loop (model only) and rods can't be re-detected. Start tip_feed.py.", raw: "no POST /api/tip for over 2 s" });
+      else if (t.feed.age_s >= 0.5) add({ id: "feedstale", level: "warning", source: "Camera", title: `Camera data stale (${t.feed.age_s.toFixed(1)} s old)`,
+        detail: "The tip position from the camera is out of date: closed-loop correction is not used and the tip shown is the model's.", raw: `feed.age_s = ${t.feed.age_s.toFixed(2)}` });
+      else if (!t.feed.markers) add({ id: "marker", level: "warning", source: "Camera", title: "Tip marker not detected",
+        detail: "The camera sees no green marker on the tip. The position shown is the model's.", raw: "feed.markers = 0" });
+    }
+    const o = t.obstacle || {};
+    if (o.rod && o.avoid && o.clear_model_mm != null && o.clear_model_mm < o.clearance_mm) {
+      const touch = o.clear_model_mm < 0;
+      add({ id: "clear", level: touch ? "fault" : "warning", source: "Obstacle",
+        title: touch ? "Arm touching the marked rod (model)" : `Arm ${fmt(o.clear_model_mm, 0)} mm from the marked rod (keep ${fmt(o.clearance_mm, 0)} mm)`,
+        detail: "Modelled clearance from the motor angles: an estimate, not a guarantee.",
+        measure: [["Model", `${fmt(o.clear_model_mm, 0)} mm`], ["Camera", o.clear_camera_mm != null ? `${fmt(o.clear_camera_mm, 0)} mm` : "unknown"]], raw: `clear_model_mm = ${o.clear_model_mm.toFixed(1)}` });
+    }
+    if (o.error) add({ id: "obserr", level: "warning", source: "Obstacle", title: "Rod setup failed", detail: cap(o.error) + ".", raw: o.error });
+    if (t.status.state === "limited") add({ id: "limited", level: "warning", source: "Tip move", title: "Move stopped short: force limit",
+      detail: "A pulling motor's current passed the backend's limit, so the move stopped. The arm holds where it stopped.", raw: t.status.message });
+    if (t.status.state === "failed") add({ id: "failed", level: "fault", source: "Tip move", title: "Move failed", detail: cap(t.status.message || "failed") + ".", raw: "tip.status = failed" });
+    if (t.joy && t.joy.active && t.joy.walls && t.joy.walls.length) add({ id: "joywall", level: "warning", source: "Joystick",
+      title: `Force limit on motor ${t.joy.walls[0]}`, detail: "Ease the stick back, or keep pushing to retry the limit.", raw: t.joy.message });
+  }
+  return out.sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]);
+}
+let currentAlerts = [], alertsKey = "", openDetails = new Set(), showAllAlerts = false;
+const acked = new Set(), announced = new Set();
+function renderAlerts() {
+  currentAlerts = deriveAlerts(state);
+  const live = new Set(currentAlerts.map(a => a.id));
+  [...acked].forEach(id => { if (!live.has(id)) acked.delete(id); });
+  [...announced].forEach(id => { if (!live.has(id)) announced.delete(id); });
+  currentAlerts.forEach(a => {   // announce each new condition once
+    if (announced.has(a.id)) return; announced.add(a.id);
+    $(a.level === "fault" ? "#srAssert" : "#srPolite").textContent = `${LEVEL_WORD[a.level]}: ${a.source}, ${a.title}`;
+  });
+  const key = currentAlerts.map(a => `${a.id}|${a.level}|${a.title}|${acked.has(a.id)}|${openDetails.has(a.id)}|${a.measure.map(m => m[1]).join(",")}`).join(";") + showAllAlerts;
+  if (key === alertsKey) return;
+  alertsKey = key;
+  const max = 3, shown = showAllAlerts ? currentAlerts : currentAlerts.slice(0, max);
+  $("#alerts").innerHTML = shown.map(a => {
+    const ack = acked.has(a.id), open = openDetails.has(a.id);
+    const acts = a.actions.map(x => `<button class="btn" data-act="${x.id}" data-motor="${x.motor ?? ""}">${esc(x.label)}</button>`).join("");
+    const ms = !ack && a.measure.length ? `<span class="ms num">${a.measure.map(([k, v]) => `${esc(k)} ${esc(v)}`).join(" · ")}</span>` : "";
+    return `<div class="al ${a.level}${ack ? " acked" : ""}" role="group" aria-label="${LEVEL_WORD[a.level]}: ${esc(a.source)}">
+      <span class="lv">${LEVEL_ICON[a.level]}${LEVEL_WORD[a.level]}</span>
+      <span class="what"><span class="asrc">${esc(a.source)}</span> · <b>${esc(a.title)}</b>${ack ? ` <span class="small">· acknowledged, still active</span>` : ms}</span>
+      <span class="acts">${ack ? "" : acts}<button class="btn" data-det="${a.id}" aria-expanded="${open}">${open ? "Hide details" : "Details"}</button>${ack ? "" : `<button class="btn" data-ack="${a.id}">Acknowledge</button>`}</span>
+      ${open ? `<div class="more"><span>${esc(a.detail)}</span>${a.measure.length ? `<dl>${a.measure.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd class="num">${esc(v)}</dd></div>`).join("")}</dl>` : ""}<code>${esc(a.raw)}</code></div>` : ""}
+    </div>`;
+  }).join("") + (currentAlerts.length > max ? `<button class="al-more" id="alMore">${showAllAlerts ? "Show fewer alerts" : `Show ${currentAlerts.length - max} more alert${currentAlerts.length - max > 1 ? "s" : ""}`}</button>` : "");
+  const motorFaults = currentAlerts.filter(a => a.motor !== undefined && (a.level === "fault" || a.level === "warning")).length;
+  $("#railCount").hidden = !motorFaults; $("#railCount").textContent = motorFaults;
+}
+$("#alerts").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "alMore") { showAllAlerts = !showAllAlerts; }
+  if (b.dataset.ack) acked.add(b.dataset.ack);
+  if (b.dataset.det) openDetails.has(b.dataset.det) ? openDetails.delete(b.dataset.det) : openDetails.add(b.dataset.det);
+  if (b.dataset.act === "reboot") rebootMotor(+b.dataset.motor);
+  if (b.dataset.act === "connect") $("#connect").click();
+  if (b.dataset.act === "motor") { selectMotor(+b.dataset.motor); showScreen("motors"); }
+  alertsKey = ""; renderAlerts();
+});
+
+// ---------------- render ----------------
 let uiVersion = null;
 function render(s) {
   state = s;
   // the GUI was updated: reload to get the new page (not while joystick control is on)
   if (uiVersion && s.ui_version && s.ui_version !== uiVersion && !(s.tip && s.tip.joy && s.tip.joy.active)) location.reload();
   uiVersion = uiVersion || s.ui_version;
-  renderTip(s);
-  $("#dot").classList.toggle("on", s.connected);
-  $("#status").textContent = s.connected ? `Connected · ${s.port}${s.mock ? " (simulated)" : ""}` : "Disconnected";
-  if (s.error && !s.connected) showError(s.error);
+  document.body.classList.toggle("stale", !wsOpen || !s.connected);
+  renderAlerts();
+  const conn = $("#conn");
+  conn.classList.toggle("on", wsOpen && s.connected); conn.classList.toggle("bad", !wsOpen || (!s.connected && !!s.error));
+  $("#status").textContent = !wsOpen ? "Server unreachable — retrying" : s.connected ? `Connected · ${s.port}${s.mock ? " · simulated" : ""}` : "Disconnected";
+  $("#connDetail").textContent = !wsOpen ? "The control server is not answering." : s.connected ? `Connected to ${s.port}${s.mock ? " (simulated motors)" : ""}.` : s.error || "Not connected.";
   const sp = $("#speed");
   if (document.activeElement !== sp) sp.value = s.profile_velocity;
   $("#speedval").textContent = `${(sp.value * 0.229).toFixed(1)} rpm`;
-  s.motors.forEach((m, i) => {
-    const { el } = cards[i], c = cards[i];
-    el.classList.toggle("offline", !m.online);
-    $(".model", el).textContent = m.online ? (m.model || "") : (s.connected ? "no response" : "offline");
-    $(".moving", el).style.visibility = m.moving ? "visible" : "hidden";  // keep its space: no layout jumps
-    $(".override", el).hidden = !m.overridden;
-    const err = $(".err", el); err.hidden = !m.hw_error; err.textContent = m.hw_error ? `HW error ${m.hw_error}: ${hwText(m.hw_error)}` : "";
-    $(".reboot", el).hidden = !m.hw_error;
-    $(".pulse", el).textContent = m.online ? m.pulse : "—";
-    const zero = m.settings.zero_rad ?? 0;
-    $(".uncal", el).hidden = m.calibrated || !m.online;
-    $(".deg", el).textContent = m.online ? `${fmt(deg(m.angle_rel_rad), 2)}°` : "—";
-    $(".rad", el).textContent = m.online ? fmt(m.angle_rel_rad, 4) : "—";
-    $(".cable", el).textContent = m.cable_mm !== undefined ? `${fmt(m.cable_mm, 2)} mm` : "—";
-    $(".goal", el).textContent = m.online && m.goal_rel_rad !== null ? `${fmt(deg(m.goal_rel_rad), 1)}°` : "—";
-    $(".abs", el).textContent = m.online ? `${fmt(deg(m.angle_rad), 2)}°` : "—";
-    $(".zeroat", el).textContent = m.calibrated ? `${fmt(deg(zero), 2)}° abs` : "not set";
-    $(".vel", el).textContent = m.online ? `${fmt(m.velocity_rpm, 1)} rpm` : "—";
-    $(".cur", el).textContent = !m.online ? "—" : m.ma_per_unit ? `${fmt(m.current_raw * m.ma_per_unit, 0)} mA` : `${m.current_raw} u`;
-    $(".temp", el).textContent = m.online && m.temp_c !== null ? `${m.temp_c} °C` : "";
-    const tq = $(".torque", el); tq.checked = !!m.torque; tq.disabled = !m.online || (!!m.hw_error && !m.torque);
-    const [lo, hi] = m.limits_rad.map(r => deg(r - zero));
-    const slider = $(".slider", el);
-    slider.min = lo; slider.max = hi;
-    $(".lo", el).textContent = `${Math.round(lo) || 0}°`; $(".hi", el).textContent = `${Math.round(hi) || 0}°`;
-    if (!c.dragging && m.online) slider.value = deg(m.torque && m.goal_rel_rad !== null ? m.goal_rel_rad : m.angle_rel_rad);
-    const canMove = m.online && m.torque;
-    slider.disabled = !canMove;
-    el.querySelectorAll("[data-jog], .go").forEach(b => b.disabled = !canMove);
-    $(".zero", el).disabled = !m.online;
-    if (!c.settingsLoaded || !el.querySelector("details").open) {
-      $(".radius", el).value = m.settings.radius_mm; $(".invert", el).checked = m.settings.invert;
-      $(".smin", el).value = m.settings.min_deg; $(".smax", el).value = m.settings.max_deg;
-      c.settingsLoaded = true;
-    }
-  });
+  renderMap(s);
+  renderTip(s);
+  if (screen === "motors") renderDetail(s);
+  if (screen === "setup") renderSetup(s);
+  const faults = currentAlerts.filter(a => a.motor !== undefined && a.level !== "notice");
+  const mf = $("#motorsFinding");
+  mf.textContent = !s.connected ? "Not connected: motor readings are unknown." : faults.length ? faults.map(a => `Motor ${a.motor}: ${a.title.toLowerCase()}`).join(" · ")
+    : `${s.motors.filter(m => m.online).length} of 4 answering · ${s.motors.filter(m => m.online && m.torque).length} with torque on`;
+  mf.className = `finding${faults.some(a => a.level === "fault") ? " bad" : faults.length ? " warn" : ""}`;
 }
+function renderSetup(s) {
+  const rows = s.motors.map((m, i) => `<tr><td>Motor ${i} <span class="muted small">· ${POS_WORDS[i]}</span></td>
+    <td class="num">${m.calibrated ? `${fmt(deg(m.settings.zero_rad), 2)}°` : '<span class="pill">not set</span>'}</td>
+    <td class="num">${m.online ? `${fmt(deg(m.angle_rel_rad), 1)}°` : "—"}</td>
+    <td><button class="btn quiet" data-open="${i}">Open</button></td></tr>`).join("");
+  if ($("#calRows").innerHTML.replace(/\s+/g, "") !== rows.replace(/\s+/g, "")) $("#calRows").innerHTML = rows;
+  $("#calall").disabled = !s.connected;
+  $("#modelInfo").innerHTML = tipModel ? `<p><b>Fitted ${esc(tipModel.fitted)}</b> from ${tipModel.n} samples. Held-out error: median ${fmt(tipModel.cv_error_mm.median, 1)} mm, max ${fmt(tipModel.cv_error_mm.max, 0)} mm.</p>
+    <p>Arm length ${fmt(tipModel.length_mm, 0)} mm, attached at x ${fmt(tipModel.base[0], 1)}, y ${fmt(tipModel.base[1], 1)}, z ${fmt(tipModel.base[2], 1)} mm.</p>`
+    : `<p><b>No tip model.</b> Collect data with <code>collect_tip_data.py</code>, then run <code>fit_tip_model.py</code>; the GUI picks up a new fit by itself.</p>`;
+}
+$("#calRows").addEventListener("click", e => { const b = e.target.closest("[data-open]"); if (b) { selectMotor(+b.dataset.open); showScreen("motors"); } });
 
 function connectWs() {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-  ws.onmessage = e => render(JSON.parse(e.data));
-  ws.onclose = () => { $("#dot").classList.remove("on"); $("#status").textContent = "Server unreachable — retrying"; setTimeout(connectWs, 1000); };
+  ws.onopen = () => { wsOpen = true; };
+  ws.onmessage = e => { wsOpen = true; render(JSON.parse(e.data)); };
+  ws.onclose = () => { if (wsOpen || !wsClosedAt) wsClosedAt = Date.now(); wsOpen = false; if (state) render(state); else renderAlerts(); setTimeout(connectWs, 1000); };
 }
+setInterval(() => { if (!wsOpen && state) render(state); else if (lastError) renderAlerts(); }, 1000);  // keep "stale for N s" and notices current
 
 async function loadPorts() {
   const ports = await api("/api/ports").catch(() => []);
   const sel = $("#port"), cur = sel.value;
   sel.innerHTML = '<option value="">auto (first FTDI)</option>' +
-    ports.map(p => `<option value="${p.device}">${p.device}${p.emio ? " · EMIO" : ""}</option>`).join("");
+    ports.map(p => `<option value="${esc(p.device)}">${esc(p.device)}${p.emio ? " · EMIO" : ""}</option>`).join("");
   sel.value = cur;
 }
-
 $("#connect").addEventListener("click", () => api("/api/connect", { port: $("#port").value || null }).then(() => showError("")).catch(() => {}));
 $("#disconnect").addEventListener("click", () => api("/api/disconnect", {}).catch(() => {}));
-$("#calall").addEventListener("click", () => {
-  if (confirm("Set the current position of every motor as 0?")) api("/api/zero_all", {}).then(() => showError("")).catch(() => {});
+$("#calall").addEventListener("click", async () => {
+  if (await confirmBox("Calibrate all motors?", "Set the current position of every motor as 0?", "Set every motor's 0 here"))
+    api("/api/zero_all", {}).then(() => showError("")).catch(() => {});
 });
 $("#hold").addEventListener("click", () => api("/api/hold", {}).catch(() => {}));
 $("#off").addEventListener("click", () => api("/api/torque_off_all", {}).catch(() => {}));
 $("#speed").addEventListener("change", e => api("/api/speed", { profile_velocity: +e.target.value }).catch(() => {}));
 $("#speed").addEventListener("input", e => $("#speedval").textContent = `${(e.target.value * 0.229).toFixed(1)} rpm`);
 $("#port").addEventListener("focus", loadPorts);
-document.addEventListener("pointerup", () => cards.forEach(c => c.dragging = false));
-document.addEventListener("keydown", e => { if (e.key === "Escape") api("/api/torque_off_all", {}).catch(() => {}); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$("#confirm").open) api("/api/torque_off_all", {}).catch(() => {});  // in a dialog, Esc only cancels it
+});
 
 // ---------------- Tip control ----------------
-let tipModel = null, tipTarget = null, tipView = null;
+let tipModel = null, tipTarget = null, tipView = null, viewTab = "top";
 const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 async function loadTipModel() {
@@ -470,12 +1013,32 @@ function stickToPairs(x, y) {
   return [x * Math.cos(r[0]) + y * Math.sin(r[0]), x * Math.cos(r[1]) + y * Math.sin(r[1])];  // A (motor 0 / 2), B (1 / 3)
 }
 
+// view tabs
+function setViewTab(v) {
+  viewTab = v;
+  $$(".tabs [role=tab]").forEach(b => { const on = b.dataset.view === v; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
+  $$(".vpane").forEach(p => p.hidden = p.id !== `pane-${v}`);
+  $$(".tabtools").forEach(t => t.hidden = t.dataset.for !== v);
+  $$(".viewfoot [data-for]").forEach(k => k.classList.toggle("off-tab", !k.dataset.for.split(" ").includes(v)));
+  if (state) render(state);
+}
+$$(".tabs [role=tab]").forEach(b => {
+  b.addEventListener("click", () => setViewTab(b.dataset.view));
+  b.addEventListener("keydown", e => {
+    if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+    const tabs = $$(".tabs [role=tab]"), k = (tabs.indexOf(b) + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    tabs[k].focus(); setViewTab(tabs[k].dataset.view);
+  });
+});
+const footStyle = document.createElement("style"); footStyle.textContent = ".viewfoot .off-tab { display: none !important; }"; document.head.appendChild(footStyle);
+
 function setupCanvas(cv) {
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
   return { g, w, h };
 }
+const visible = cv => cv.clientWidth > 20 && cv.clientHeight > 20;
 
 // world box -> canvas transform with equal aspect; y up
 function fitView(w, h, x0, x1, y0, y1, pad = 28) {
@@ -491,23 +1054,25 @@ function dot(g, x, y, r, fill, stroke) {
 }
 
 function drawTop(t) {
-  const cv = $("#tipTop"), { g, w, h } = setupCanvas(cv), muted = cssVar("--muted"), line = cssVar("--line");
-  if (!tipModel) { g.fillStyle = muted; g.font = "13px system-ui"; g.fillText("No tip model: run fit_tip_model.py", 16, 24); tipView = null; return; }
-  const pts = tipModel.outline.concat(tipModel.samples);
+  const cv = $("#tipTop");
+  if (!visible(cv)) return;
+  const { g, w, h } = setupCanvas(cv), muted = cssVar("--muted"), line = cssVar("--rule"), data = cssVar("--data"), font = cssVar("--font");
+  if (!tipModel) { g.fillStyle = muted; g.font = `14px ${font}`; g.fillText("No tip model: run fit_tip_model.py", 20, 32); tipView = null; return; }
+  const pts = tipModel.outline.concat(tipModel.samples || []);
   const us = pts.map(([x, z]) => view.u(x, z)), vs = pts.map(([x, z]) => view.v(x, z));
   const v = tipView = fitView(w, h, Math.min(...us) - 15, Math.max(...us) + 15, Math.min(...vs) - 15, Math.max(...vs) + 15);
   const P = (x, z) => [v.px(view.u(x, z)), v.py(view.v(x, z))];  // camera (x, z) -> canvas pixel
-  g.strokeStyle = line; g.lineWidth = 1; g.font = "11px system-ui"; g.fillStyle = muted;
+  g.strokeStyle = line; g.lineWidth = 1;
   for (let a = -300; a <= 300; a += 50) {           // 50 mm grid
     g.beginPath(); g.moveTo(v.px(a), 0); g.lineTo(v.px(a), h); g.moveTo(0, v.py(a)); g.lineTo(w, v.py(a)); g.stroke();
   }
-  g.font = "600 12px system-ui";                      // motors in the corners, as laid out on the robot
+  g.fillStyle = muted; g.font = `500 13px ${font}`;    // motors in the corners, as laid out on the robot
   LAYOUT_DEG.forEach((a, i) => {
     const right = Math.cos(a * Math.PI / 180) > 0, top = Math.sin(a * Math.PI / 180) > 0;
     g.textAlign = right ? "right" : "left";
-    g.fillText(`motor ${i}`, right ? w - 6 : 6, top ? 16 : h - 8);
+    g.fillText(`motor ${i}`, right ? w - 12 : 12, top ? 22 : h - 12);
   });
-  g.textAlign = "center"; g.font = "11px system-ui"; g.fillText("50 mm grid", w / 2, h - 8);
+  g.textAlign = "center"; g.font = `12px ${font}`; g.fillText("50 mm grid", w / 2, h - 12);
   const cx = w / 2, cy = 30;                          // camera axes, for the X / Z boxes
   [["x", 1, 0], ["z", 0, 1]].forEach(([name, ex, ez]) => {
     const du = view.u(ex, ez), dv = view.v(ex, ez);
@@ -516,8 +1081,8 @@ function drawTop(t) {
   });
   g.textAlign = "left";
   g.beginPath(); tipModel.outline.forEach(([x, z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z)));
-  g.closePath(); g.fillStyle = cssVar("--accent") + "22"; g.fill(); g.strokeStyle = cssVar("--accent") + "88"; g.stroke();
-  g.fillStyle = muted + "99"; tipModel.samples.forEach(([x, z]) => { const [px, py] = P(x, z); g.fillRect(px - 1, py - 1, 2, 2); });
+  g.closePath(); g.fillStyle = muted + "14"; g.fill(); g.strokeStyle = muted + "88"; g.stroke();
+  g.fillStyle = muted + "77"; (tipModel.samples || []).forEach(([x, z]) => { const [px, py] = P(x, z); g.fillRect(px - 1, py - 1, 2, 2); });
   const o = t.obstacle;
   if (o && o.objects) o.objects.forEach(ob => {  // objects found by colour, seen from above: shown, not avoided
     const c = rodColour(ob.colour);
@@ -527,8 +1092,8 @@ function drawTop(t) {
       g.setLineDash([3, 3]); g.beginPath(); pk.outline.forEach(([x, , z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z)));
       g.closePath(); g.stroke(); g.setLineDash([]);
     });
-    const [cx, cy] = P(ob.centre[0], ob.centre[2]);
-    g.fillStyle = c; g.font = "11px system-ui"; g.textAlign = "center"; g.fillText(ob.shape, cx, cy + 4); g.textAlign = "left";
+    const [ox, oy] = P(ob.centre[0], ob.centre[2]);
+    g.fillStyle = c; g.font = `12px ${font}`; g.textAlign = "center"; g.fillText(ob.shape, ox, oy + 4); g.textAlign = "left";
   });
   if (o && o.rods) o.rods.forEach(r => {  // found by colour: shown, not avoided
     const [ax, ay] = P(r.p0[0], r.p0[2]), [bx, by] = P(r.p1[0], r.p1[2]);
@@ -537,19 +1102,22 @@ function drawTop(t) {
   });
   if (o && o.rod) {
     if (obsMap && obsMap.version === o.version && obsMap.rod) {  // tip positions where the arm would be too close
-      const sz = Math.max(3, obsMap.step_mm * v.k);
-      [[obsMap.near, cssVar("--warn") + "55"], [obsMap.hit, cssVar("--danger") + "77"]].forEach(([pts, c]) => {
-        g.fillStyle = c; pts.forEach(([x, z]) => { const [px, py] = P(x, z); g.fillRect(px - sz / 2, py - sz / 2, sz, sz); });
+      const sz = Math.max(3, obsMap.step_mm * v.k * 1.7), layer = drawTop.layer || (drawTop.layer = document.createElement("canvas"));
+      layer.width = cv.width; layer.height = cv.height;
+      const lg = layer.getContext("2d"); lg.setTransform(cv.width / w, 0, 0, cv.height / h, 0, 0);
+      [[obsMap.near, cssVar("--warn")], [obsMap.hit, cssVar("--danger")]].forEach(([pts, c]) => {
+        lg.fillStyle = c; pts.forEach(([x, z]) => { const [px, py] = P(x, z); lg.fillRect(px - sz / 2, py - sz / 2, sz, sz); });
       });
+      g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 0.28; g.drawImage(layer, 0, 0); g.restore();
     }
     const r = o.rod, [ax, ay] = P(r.p0[0], r.p0[2]), [bx, by] = P(r.p1[0], r.p1[2]);
     g.strokeStyle = cssVar("--danger"); g.lineCap = "round"; g.lineWidth = Math.max(3, 2 * r.radius * v.k);
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke(); g.lineCap = "butt"; g.lineWidth = 1;
-    g.fillStyle = cssVar("--danger"); g.font = "11px system-ui";
-    g.fillText(`marked rod, y ${((r.p0[1] + r.p1[1]) / 2).toFixed(0)}`, (ax + bx) / 2 + 8, (ay + by) / 2 - 8);
+    g.fillStyle = cssVar("--danger"); g.font = `500 12px ${font}`;
+    g.fillText(`marked rod, y ${fmt((r.p0[1] + r.p1[1]) / 2, 0)}`, (ax + bx) / 2 + 8, (ay + by) / 2 - 8);
   }
   if (o && o.plan_xz && o.plan_xz.length > 1) {
-    g.setLineDash([6, 4]); g.strokeStyle = cssVar("--accent"); g.lineWidth = 2; g.beginPath();
+    g.setLineDash([6, 4]); g.strokeStyle = data; g.lineWidth = 2; g.beginPath();
     o.plan_xz.forEach(([x, z], i) => i ? g.lineTo(...P(x, z)) : g.moveTo(...P(x, z))); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
   }
   const [bpx, bpy] = P(tipModel.base[0], tipModel.base[2]);  // arm attachment, seen from above
@@ -562,7 +1130,7 @@ function drawTop(t) {
     const [x, y] = P(...t.joy.target_xz);
     dot(g, x, y, 8, null, cssVar("--warn")); dot(g, x, y, 2, cssVar("--warn"));
   }
-  if (t.predicted) dot(g, ...P(t.predicted[0], t.predicted[2]), 6, null, muted);
+  if (t.predicted) dot(g, ...P(t.predicted[0], t.predicted[2]), 7, null, data);
   if (meas) dot(g, ...P(...meas), 6, cssVar("--ok"));
   if (target) {
     const [x, y] = P(...target), d = cssVar("--danger");
@@ -572,15 +1140,23 @@ function drawTop(t) {
 }
 
 function drawSide(t) {
-  const cv = $("#tipSide"), { g, w, h } = setupCanvas(cv), muted = cssVar("--muted");
-  if (!tipModel) { $("#tipBend").textContent = "—"; return; }
+  const cv = $("#tipSide");
+  if (!tipModel) { $("#tipBend").textContent = ""; }
+  const src = t.feed && t.feed.markers ? [t.feed.x, t.feed.y, t.feed.z] : t.predicted;
+  if (tipModel && src) {
+    const [bx, by, bz] = tipModel.base, L = tipModel.length_mm, hh0 = Math.hypot(src[0] - bx, src[2] - bz), vv0 = by - src[1];
+    const th0 = 2 * Math.atan2(hh0, vv0), ph0 = Math.atan2(src[2] - bz, src[0] - bx) * 180 / Math.PI;
+    $("#tipBend").textContent = `bend ${fmt(th0 * 180 / Math.PI, 0)}° from vertical, toward ${fmt(ph0, 0)}° (from +x toward +z) · tip ${fmt(hh0, 0)} mm out, `
+      + `${fmt(src[1] - (by - L), 0)} mm above the straight-down position` + (t.feed && t.feed.markers ? " · camera" : " · model");
+  } else $("#tipBend").textContent = "";
+  if (!visible(cv) || !tipModel) return;
+  const { g, w, h } = setupCanvas(cv), muted = cssVar("--muted"), font = cssVar("--font");
   const [bx, by, bz] = tipModel.base, L = tipModel.length_mm, platformY = -233;
   const v = fitView(w, h, -0.25 * L, 1.1 * L, platformY - 10, by + 20);
-  g.strokeStyle = cssVar("--line"); g.lineWidth = 1; g.beginPath(); g.moveTo(v.px(-1e3), v.py(by)); g.lineTo(v.px(0), v.py(by)); g.stroke();
+  g.strokeStyle = cssVar("--rule"); g.lineWidth = 1; g.beginPath(); g.moveTo(v.px(-1e3), v.py(by)); g.lineTo(v.px(0), v.py(by)); g.stroke();
   g.strokeStyle = muted; g.beginPath(); g.moveTo(0, v.py(platformY)); g.lineTo(w, v.py(platformY)); g.stroke();
-  g.fillStyle = muted; g.font = "11px system-ui"; g.fillText("platform", 6, v.py(platformY) - 4); g.fillText("attachment", v.px(0) + 6, v.py(by) - 4);
-  const src = t.feed && t.feed.markers ? [t.feed.x, t.feed.y, t.feed.z] : t.predicted;
-  if (!src) { $("#tipBend").textContent = "—"; return; }
+  g.fillStyle = muted; g.font = `12px ${font}`; g.fillText("platform", 12, v.py(platformY) - 6); g.fillText("attachment", v.px(0) + 8, v.py(by) - 6);
+  if (!src) return;
   const hh = Math.hypot(src[0] - bx, src[2] - bz), vv = by - src[1];
   const theta = 2 * Math.atan2(hh, vv), phi = Math.atan2(src[2] - bz, src[0] - bx) * 180 / Math.PI;
   const rod = t.obstacle && t.obstacle.rod;
@@ -599,7 +1175,7 @@ function drawSide(t) {
     }
     g.lineCap = "butt"; g.lineWidth = 1;
   }
-  g.strokeStyle = cssVar("--accent"); g.lineWidth = 4; g.lineCap = "round"; g.beginPath(); g.moveTo(v.px(0), v.py(by));
+  g.strokeStyle = cssVar("--data"); g.lineWidth = 5; g.lineCap = "round"; g.beginPath(); g.moveTo(v.px(0), v.py(by));
   if (hh < 0.5) g.lineTo(v.px(0), v.py(by - vv));
   else {
     const R = (hh * hh + vv * vv) / (2 * hh);
@@ -607,22 +1183,20 @@ function drawSide(t) {
   }
   g.stroke(); g.lineCap = "butt";
   dot(g, v.px(0), v.py(by), 4, muted);
-  dot(g, v.px(hh), v.py(src[1]), 6, t.feed && t.feed.markers ? cssVar("--ok") : null, t.feed && t.feed.markers ? null : muted);
-  $("#tipBend").textContent = `bend ${(theta * 180 / Math.PI).toFixed(0)}° from vertical, toward ${phi.toFixed(0)}° (from +x toward +z), `
-    + `tip ${hh.toFixed(0)} mm out, ${(src[1] - (by - L)).toFixed(0)} mm above the straight-down position` + (t.feed && t.feed.markers ? "" : " (model)");
+  dot(g, v.px(hh), v.py(src[1]), 7, t.feed && t.feed.markers ? cssVar("--ok") : cssVar("--surface"), t.feed && t.feed.markers ? null : cssVar("--data"));
 }
 
-// live camera view: images from tip_feed.py, fetched one at a time while it is running and the tab is visible
+// live camera view: images from tip_feed.py, fetched one at a time while it is running, shown and the tab is visible
 let camLive = false, camBusy = false, camUrl = null;
 function setCamLive(live) {
   camLive = live;
   $("#camBox").classList.toggle("live", live && !!camUrl);
-  if (live && !camBusy && !document.hidden) camLoop();
+  if (live && !camBusy && !document.hidden && viewTab === "camera" && screen === "operate") camLoop();
 }
 async function camLoop() {
   camBusy = true;
   const img = $("#camImg");
-  while (camLive && !document.hidden) {
+  while (camLive && !document.hidden && viewTab === "camera" && screen === "operate") {
     const t0 = performance.now();
     try {
       const r = await fetch("/api/camera/latest", {cache: "no-store"});
@@ -631,7 +1205,6 @@ async function camLoop() {
         await new Promise(res => { img.onload = img.onerror = res; img.src = url; });
         if (camUrl) URL.revokeObjectURL(camUrl);
         camUrl = url;
-        if (img.naturalWidth) $("#camBox").style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
         $("#camBox").classList.toggle("live", camLive);
       }
     } catch (e) { /* server restarting; retry */ }
@@ -646,21 +1219,50 @@ function renderTip(s) {
   const t = s.tip; if (!t) return;
   if (t.model && !tipModel) loadTipModel();
   if (!t.model) tipModel = null;
-  $("#tipModelChip").textContent = tipModel ? `model: ${tipModel.n} samples, ±${tipModel.cv_error_mm.median.toFixed(0)} mm` : "no model";
-  const fc = $("#tipFeedChip"), live = t.feed && t.feed.age_s < 0.5;
-  fc.textContent = !t.feed ? "camera feed off" : !live ? "camera feed stale" : t.feed.markers ? `camera: tip seen` : "camera: tip not seen";
-  fc.classList.toggle("live", !!(live && t.feed.markers));
-  const f3 = p => p ? `${p[0].toFixed(1)}, ${p[2].toFixed(1)}` : "—";
-  $("#tipMeas").textContent = t.feed && t.feed.markers ? f3([t.feed.x, t.feed.y, t.feed.z]) : "—";
-  $("#tipPred").textContent = f3(t.predicted);
-  $("#tipY").textContent = t.feed && t.feed.markers ? t.feed.y.toFixed(1) : t.predicted ? t.predicted[1].toFixed(1) + " (model)" : "—";
-  $("#tipPose").textContent = t.pose ? `${t.pose.A.toFixed(2)} / ${t.pose.B.toFixed(2)}` : "—";
-  const st = t.status, err = st.error_mm != null ? ` · error ${st.error_mm.toFixed(1)} mm` : "";
-  $("#tipStatus").innerHTML = `<b>${st.state}</b>${err}<br>${st.message || ""}`;
+  $("#tipModelChip").textContent = tipModel ? `model error ±${fmt(tipModel.cv_error_mm.median, 0)} mm` : "no tip model";
+  const live = t.feed && t.feed.age_s < 0.5, fc = $("#tipFeedChip");
+  fc.textContent = !t.feed ? "camera feed off" : !live ? `camera stale ${fmt(t.feed.age_s, 1)} s` : t.feed.markers ? "camera: tip seen" : "camera: tip not seen";
+  fc.className = `pill ${live && t.feed.markers ? "pos" : t.feed && (!live || !t.feed.markers) ? "warn" : ""}`;
+  const xz = p => p ? `${fmt(p[0], 1)}, ${fmt(p[2], 1)}` : "—";
+  const meas = t.feed && t.feed.markers ? [t.feed.x, t.feed.y, t.feed.z] : null;
+  $("#tipMeas").innerHTML = meas ? `${xz(meas)}<span class="unit">mm</span>` : "—"; $("#tipMeas").classList.toggle("none", !meas);
+  $("#tipMeas").classList.toggle("stale-v", !!(meas && !live));
+  $("#tipMeasSub").textContent = meas ? `height y ${fmt(meas[1], 1)} mm${live ? "" : ` · ${fmt(t.feed.age_s, 1)} s old`}` : t.feed ? "tip marker not seen" : "no camera data";
+  $("#tipPred").innerHTML = t.predicted ? `${xz(t.predicted)}<span class="unit">mm</span>` : "—"; $("#tipPred").classList.toggle("none", !t.predicted);
+  $("#tipPose").textContent = t.pose ? `${fmt(t.pose.A, 2)}, ${fmt(t.pose.B, 2)}` : "—"; $("#tipPose").classList.toggle("none", !t.pose);
+  $("#tipPredSub").textContent = t.predicted ? `height y ${fmt(t.predicted[1], 1)} mm` : "motor angles unknown";
+  const st = t.status, err = st.error_mm != null ? ` · ${fmt(st.error_mm, 1)} mm off` : "";
+  const ts = $("#tipStatus"), bad = st.state === "failed", warn = st.state === "limited";
+  ts.className = `status${bad ? " bad" : warn ? " warn" : t.busy && !t.joy.active ? " go" : ""}`;
+  ts.innerHTML = `<b>${esc(cap(st.state))}${st.target ? ` · target ${fmt(st.target[0], 0)}, ${fmt(st.target[1], 0)} mm` : ""}${err}</b>${st.message ? `<span>${esc(cap(st.message))}</span>` : ""}`;
   $("#tipGo").disabled = t.busy || !tipModel || !s.connected; $("#tipStop").disabled = !t.busy;
+  // control mode, top bar
+  const j = t.joy || {};
+  $("#modeText").textContent = j.active ? `Joystick · ${$("#joyMode").value === "bend" ? "motor pairs" : "tip"} · ${j.message || ""}`
+    : t.busy ? `Tip move · ${st.state}${st.message ? ` · ${st.message}` : ""}` : st.state !== "idle" ? `Idle · last move ${st.state}` : "Idle";
   renderObstacle(t.obstacle, t);
-  drawTop(t); drawSide(t);
+  renderFinding(s);
+  if (screen === "operate") {
+    if (viewTab === "top") drawTop(t);
+    drawSide(t);  // also writes the bend sentence
+  }
   if (window.scene3d) window.scene3d.update(s);
+}
+function renderFinding(s) {
+  const t = s.tip, f = $("#finding"), worst = currentAlerts[0];
+  let txt, cls = "";
+  if (worst && (worst.level === "fault" || worst.level === "warning")) {
+    txt = `${worst.source}: ${worst.title.charAt(0).toLowerCase() + worst.title.slice(1)}.`; cls = worst.level === "fault" ? "bad" : "warn";
+  } else if (t) {
+    const o = t.obstacle || {}, cam = t.feed && t.feed.markers && t.feed.age_s < 0.5;
+    const where = cam ? `Tip at ${fmt(t.feed.x, 0)}, ${fmt(t.feed.z, 0)} mm (camera)` : t.predicted ? `Tip at ${fmt(t.predicted[0], 0)}, ${fmt(t.predicted[2], 0)} mm (model)` : "Tip position unknown";
+    const clear = o.rod && o.clear_model_mm != null ? `, ${fmt(o.clear_model_mm, 0)} mm clear of the marked rod` : "";
+    const doing = t.joy && t.joy.active ? "Joystick control" : t.busy ? "Moving" : s.motors.some(m => m.online && m.torque) ? "Holding" : "Torque off";
+    txt = `${doing}. ${where}${clear}.`;
+  } else txt = "—";
+  f.textContent = txt; f.className = `finding ${cls}`;
+  const t2 = s.tip;
+  $("#fresh").textContent = t2 && t2.feed ? `camera ${fmt(t2.feed.age_s, 1)} s ago` : "";
 }
 
 function tipGoto() {
@@ -693,45 +1295,45 @@ async function loadObsMap(version) {
 function setCamMode(m) {
   camMode = m;
   $("#camBox").classList.toggle("picking", !!m);
-  $("#obsPick").classList.toggle("primary", m === "pick");
-  $("#obsMark").classList.toggle("primary", !!(m && m.mark));
+  $("#obsPick").classList.toggle("on", m === "pick");
+  $("#obsMark").classList.toggle("on", !!(m && m.mark));
+  $("#pickbar").hidden = !m;
+  if (m) { showScreen("operate"); setViewTab("camera"); }
 }
+$("#pickCancel").addEventListener("click", e => { e.stopPropagation(); setCamMode(null); });
 function renderObstacle(o, t) {
   if (!o) return;
   if (o.version !== obsVersion) loadObsMap(o.version);
   $("#obsLegend").hidden = !o.rod;
   const r = o.rod, rods = o.rods || [], objs = o.objects || [], age = o.rods_age_s;
   $("#obsBarsLegend").hidden = !rods.length && !objs.length;
-  $("#obsChip").textContent = r ? `rod marked · r ${r.radius.toFixed(0)} mm`
-    : rods.length || objs.length ? [rods.length && `${rods.length} rod${rods.length > 1 ? "s" : ""}`,
-        objs.length && `${objs.length} object${objs.length > 1 ? "s" : ""}`].filter(Boolean).join(", ")
-      + (o.feed ? " found" : " found before the camera feed stopped")
-    : o.feed ? (o.hsv_set ? "looking for the picked colour" : "looking for orange / red rods") : "no rods (camera feed off)";
-  $("#obsChip").classList.toggle("live", !!(r || ((rods.length || objs.length) && o.feed)));
+  $("#obsChip").innerHTML = r ? `Rod r ${fmt(r.radius, 0)} mm · ${o.avoid ? `moves keep the arm ${fmt(o.clearance_mm, 0)} mm from it · a model estimate, not a guarantee` : "avoidance off"}`
+    : rods.length || objs.length ? `<b>${[rods.length && `${rods.length} rod${rods.length > 1 ? "s" : ""}`, objs.length && `${objs.length} object${objs.length > 1 ? "s" : ""}`].filter(Boolean).join(", ")}</b> found by colour`
+      + (o.feed ? "" : " before the camera feed stopped") + " · shown, not avoided · no marked rod"
+    : o.feed ? (o.hsv_set ? "Looking for the picked colour" : "Looking for orange and red rods") + " · nothing found" : "No rods: camera feed off";
   const counts = {};
   rods.forEach(b => { counts[b.colour] = (counts[b.colour] || 0) + 1; });
-  $("#obsBars").innerHTML = rods.length ? "Found by colour (shown, not avoided): " + Object.entries(counts).map(([c, n]) =>
-    `<b style="color:${rodColour(c)}">${n} ${c === "picked" ? "of the picked colour" : c}</b>`).join(", ")
-    + (o.feed && age != null && age > 2 ? ` · last seen ${age < 120 ? age.toFixed(0) + " s" : (age / 60).toFixed(0) + " min"} ago` : "") : "";
-  if (objs.length) $("#obsBars").innerHTML += (rods.length ? "<br>" : "") + "Objects (shown, not avoided): " + objs.map(ob =>
-    `<b style="color:${rodColour(ob.colour)}">${ob.colour} ${ob.shape}</b> ${ob.size_mm[0].toFixed(0)}×${ob.size_mm[1].toFixed(0)} mm`
-    + (ob.holes > 0.25 ? " (open / mesh)" : "")
-    + (ob.pockets && ob.pockets.length ? ` with pockets: ${ob.pockets.map(pk => `${pk.shape} ${pk.size_mm[0].toFixed(0)} mm`
-      + (pk.depth_mm != null ? ` (${pk.depth_mm.toFixed(0)} mm deep)` : "")).join(", ")}` : "")).join("; ");
+  let bars = rods.length ? "Found by colour (shown, not avoided): " + Object.entries(counts).map(([c, n]) => `${n} ${c === "picked" ? "of the picked colour" : c}`).join(", ")
+    + (o.feed && age != null && age > 2 ? ` · last seen ${age < 120 ? fmt(age, 0) + " s" : fmt(age / 60, 0) + " min"} ago` : "") : "";
+  if (objs.length) bars += (rods.length ? ". " : "") + "Objects (shown, not avoided): " + objs.map(ob =>
+    `${ob.colour} ${ob.shape} ${fmt(ob.size_mm[0], 0)}×${fmt(ob.size_mm[1], 0)} mm` + (ob.holes > 0.25 ? " (open / mesh)" : "")
+    + (ob.pockets && ob.pockets.length ? ` with pockets: ${ob.pockets.map(pk => `${pk.shape} ${fmt(pk.size_mm[0], 0)} mm` + (pk.depth_mm != null ? ` (${fmt(pk.depth_mm, 0)} mm deep)` : "")).join(", ")}` : "")).join("; ");
+  $("#obsBars").textContent = bars;
   if (document.activeElement !== $("#obsClearance")) $("#obsClearance").value = o.clearance_mm;
   $("#obsAvoid").checked = o.avoid;
   const clr = (el, v) => {
-    el.textContent = v == null ? "—" : `${v.toFixed(0)} mm`;
-    el.style.color = v == null ? "" : v < 0 ? "var(--danger)" : v < o.clearance_mm ? "var(--warn)" : "var(--ok)";
+    el.innerHTML = v == null ? "—" : `${fmt(v, 0)}<span class="unit">mm</span>`; el.classList.toggle("none", v == null);
+    el.classList.toggle("bad", v != null && v < 0); el.classList.toggle("warn", v != null && v >= 0 && v < o.clearance_mm);
   };
   clr($("#obsClrModel"), o.clear_model_mm); clr($("#obsClrCam"), o.clear_camera_mm);
   $("#obsPick").disabled = $("#obsMark").disabled = !o.feed;
   $("#obsForget").disabled = !r && !rods.length && !objs.length && !o.hsv_set;
   if (camMode && !o.feed) setCamMode(null);
-  $("#obsStatus").textContent = camMode === "pick" ? "Click the rod in the camera view to use its colour."
+  const msg = camMode === "pick" ? "Click the rod in the camera view to use its colour."
     : camMode ? `Click the rod's ${camMode.mark.length ? "other" : "first"} end in the camera view.`
-    : o.picking ? "Picking the colour…" : o.marking ? "Measuring the marked ends…" : o.error || "";
-  $("#obsStatus").style.color = o.error && !camMode ? "var(--danger)" : "";
+    : o.picking ? "Picking the colour…" : o.marking ? "Measuring the marked ends…" : o.error ? cap(o.error) + "." : "";
+  $("#obsStatus").textContent = msg; $("#obsStatus").style.color = o.error && !camMode ? "var(--negative)" : "";
+  if (camMode) $("#pickText").textContent = msg;
 }
 $("#obsAvoid").addEventListener("change", e => api("/api/obstacle/settings", { avoid: e.target.checked }).catch(() => {}));
 $("#obsClearance").addEventListener("change", e => api("/api/obstacle/settings", { clearance_mm: +e.target.value }).catch(() => {}));
@@ -739,18 +1341,19 @@ $("#obsPick").addEventListener("click", () => setCamMode(camMode === "pick" ? nu
 $("#obsMark").addEventListener("click", () => setCamMode(camMode && camMode.mark ? null : { mark: [] }));
 $("#obsForget").addEventListener("click", () => api("/api/obstacle/clear", {}).catch(() => {}));
 $("#camBox").addEventListener("click", e => {
-  if (!camMode) return;
+  if (!camMode || e.target.closest("#pickbar")) return;
   const r = $("#camImg").getBoundingClientRect();
   const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
   if (u < 0 || u > 1 || v < 0 || v > 1) return;
   if (camMode === "pick") { api("/api/obstacle/pick", { u, v }).catch(() => {}); setCamMode(null); return; }
   camMode.mark.push([u, v]);
   if (camMode.mark.length === 2) { api("/api/obstacle/mark", { points: camMode.mark, radius_mm: 5 }).catch(() => {}); setCamMode(null); }
+  else if (state) renderObstacle(state.tip.obstacle, state.tip);
 });
 
 // ---------------- Gamepad ----------------
 const JOY_DEADZONE = 0.12;
-let joyPending = false, joyPrevB = false, joyLast = { x: 0, y: 0, enable: false };
+let joyPending = false, joyPrevB = false;
 
 function readStick() {
   const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
@@ -796,13 +1399,16 @@ const vStick = { active: false, x: 0, y: 0 };
 })();
 
 function drawStick(x, y, enable) {
-  const { g, w, h } = setupCanvas($("#joyStick")), r = w / 2 - 4;
-  g.strokeStyle = cssVar("--line"); g.lineWidth = 2; g.beginPath(); g.arc(w / 2, h / 2, r, 0, 2 * Math.PI); g.stroke();
+  const cv = $("#joyStick");
+  if (!visible(cv)) return;
+  const { g, w, h } = setupCanvas(cv), r = w / 2 - 4, font = cssVar("--font");
+  g.fillStyle = cssVar("--raised"); g.beginPath(); g.arc(w / 2, h / 2, r, 0, 2 * Math.PI); g.fill();
+  g.strokeStyle = cssVar("--control"); g.lineWidth = 1.5; g.stroke();
   g.beginPath(); g.moveTo(w / 2 - r, h / 2); g.lineTo(w / 2 + r, h / 2); g.moveTo(w / 2, h / 2 - r); g.lineTo(w / 2, h / 2 + r); g.stroke();
-  g.fillStyle = cssVar("--muted"); g.font = "600 11px system-ui"; g.textAlign = "center";
-  LAYOUT_DEG.forEach((a, i) => g.fillText(i, w / 2 + 0.8 * r * Math.cos(a * Math.PI / 180), h / 2 - 0.8 * r * Math.sin(a * Math.PI / 180) + 4));
+  g.fillStyle = cssVar("--muted"); g.font = `500 13px ${font}`; g.textAlign = "center";
+  LAYOUT_DEG.forEach((a, i) => g.fillText(i, w / 2 + 0.78 * r * Math.cos(a * Math.PI / 180), h / 2 - 0.78 * r * Math.sin(a * Math.PI / 180) + 5));
   g.textAlign = "left";
-  dot(g, w / 2 + x * r, h / 2 - y * r, 16, enable ? cssVar("--ok") : cssVar("--muted"));
+  dot(g, w / 2 + x * r, h / 2 - y * r, 18, enable ? cssVar("--data") : cssVar("--muted"));
 }
 
 function joyTick() {
@@ -810,16 +1416,18 @@ function joyTick() {
   const active = !!(j && j.active);
   // the on-screen stick takes over while it is being dragged; otherwise the gamepad (if any)
   const st = vStick.active ? { x: vStick.x, y: vStick.y, enable: true } : pad || { x: 0, y: 0, enable: false };
-  $("#joyPad").textContent = pad ? `gamepad: ${pad.id.replace(/\s*\(.*$/, "").slice(0, 32)}${pad.standard ? "" : " (hold RB to move)"} + on-screen stick` : "on-screen stick (no gamepad)";
+  $("#joyPad").textContent = pad ? `Gamepad: ${pad.id.replace(/\s*\(.*$/, "").slice(0, 32)}${pad.standard ? " · hold RT / R2 to move" : " · hold RB to move"} · plus the on-screen stick`
+    : "No gamepad: use the on-screen stick (press a gamepad button to connect one)";
   const en = $("#joyEnable"); en.textContent = st.enable ? (vStick.active ? "dragging: moving" : "trigger held: moving") : "released";
-  en.classList.toggle("on", !!(st && st.enable && active));
-  drawStick(st ? st.x : 0, st ? st.y : 0, !!(st && st.enable));
+  en.className = `pill ${st.enable && active ? "data" : ""}`;
+  if (screen === "operate") drawStick(st ? st.x : 0, st ? st.y : 0, !!(st && st.enable));
   $("#joyStart").disabled = active || !(state && state.connected) || (state.tip && state.tip.busy);
   $("#joyStop").disabled = !active;
   $("#joyMode").disabled = active;
   $("#joyControl").disabled = active;
-  $("#joyStatus").textContent = j ? (active ? j.message : j.message ? `off (${j.message})` : "off") : "";
-  $("#joyStatus").style.color = active && j.walls && j.walls.length ? "var(--warn)" : "";
+  const js = $("#joyStatus");
+  js.textContent = j ? (active ? cap(j.message || "active") : j.message ? `Off (${j.message})` : "Off") : "Off";
+  js.className = `status${active && j.walls && j.walls.length ? " warn" : active ? " go" : ""}`;
   if (active && st && !joyPending) {
     joyPending = true;
     const mode = $("#joyMode").value;  // stick is in screen directions: convert to camera x, z or to the motor pairs
@@ -837,7 +1445,9 @@ $("#joyStart").addEventListener("click", () => {
 });
 $("#joyStop").addEventListener("click", () => api("/api/tip/stop", {}).catch(() => {}));
 setInterval(joyTick, 50);
+window.addEventListener("resize", () => { if (state) render(state); });
 
+setViewTab("top");
 loadPorts();
 connectWs();
 </script>
